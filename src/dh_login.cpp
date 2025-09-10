@@ -27,6 +27,7 @@ using Clock = std::chrono::system_clock;
 // note: we don't delete expired tokens, they just stay in memory until daemon dies/restarts
 struct Session {
     std::string username;
+    std::string device;
     std::chrono::time_point<Clock> expires;
 };
 
@@ -122,6 +123,7 @@ int registerLoginHandler(void) {
             const auto username = (*json)["username"].asString();
             const auto password = (*json)["password"].asString();
             const auto version  = (*json)["version"].asString();
+            const auto device  = (*json)["device"].asString();      // "device" tag is optional
 
             if (username.empty() || password.empty() || version.empty()) {
                 return jsonError(req, std::move(cb), drogon::k400BadRequest, "missing_fields");
@@ -142,15 +144,19 @@ int registerLoginHandler(void) {
             if (!verifyPassword(username, password)) {
                 return jsonError(req, std::move(cb), drogon::k401Unauthorized, "invalid_credentials");
             }
-            syslog(SYSLOG_INFO,"user [%s] logged in",username.c_str());
 
+            if (device.empty()) {
+                syslog(SYSLOG_INFO, "user [%s] logged in on unidentified device", username.c_str());
+            } else {
+                syslog(SYSLOG_INFO, "user [%s] logged in on device [%s]", username.c_str(), device.c_str());
+}
             // Issue session token
             const auto token = makeToken(32);
             const auto expires = Clock::now() + std::chrono::seconds(tokenSecs);
 
             {
                 std::lock_guard<std::mutex> lk(g_sessionsMutex);
-                g_sessions[token] = Session{username, expires};
+                g_sessions[token] = Session{username, device, expires};
             }
 
             Json::Value j;
