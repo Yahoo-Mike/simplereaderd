@@ -4,8 +4,20 @@
 #include <signal.h>
 #include <stdlib.h>
 
+#include "Config.h"
+#include "Database.h"
+#include "dh_root.h"
+#include "dh_login.h"
+#include "dh_check.h"
+#include "dh_resolve.h"
+#include "dh_get.h"
+#include "dh_getSince.h"
+#include "dh_getBook.h"
+#include "dh_uploadBook.h"
+#include "dh_update.h"
+#include "dh_delete.h"
 #include "utils.h"
-
+#include "version.h"
 
 void handleSignal(int sig) {
     syslog(LOG_ERR, "simplereaderd terminated by signal %d", sig);
@@ -17,50 +29,47 @@ int main() {
 
     // open syslog
     openlog("simplereaderd", LOG_PID | LOG_CONS, LOG_DAEMON);
-    syslog(LOG_INFO, "simplereaderd starting up");
-
     
     // catch signals
-    signal(SIGINT, handleSignal);
+    signal(SIGINT,  handleSignal);
     signal(SIGTERM, handleSignal);
     signal(SIGSEGV, handleSignal); // crash (segfault)
 
     try {
-        /////////////////////////////////////////////////////////////
-        // config path (default or from env)
+        ////////////////////////////////////////////////////////////////////////
+        // configure the daemon
         //
-        std::string confPath = "/etc/simplereader/simplereader.conf";
-        if (const char* env = std::getenv("SIMPLEREADER_CONF")) {
-            confPath = env;
-        }
+        Config::get().load(); // load singleton Config
 
-        auto cfg = loadConfig(confPath);
-
-        std::string host   = cfg["host"];
-        int port           = std::stoi(cfg["port"]);
-        std::string compat = cfg["compat"];
-        int maxFileSizeMB  = std::stoi(cfg["maxfilesize"]);
-
-        auto msg = "Loaded config: host=" + host +
-                   " port="   + std::to_string(port) + 
-                   " compat=" + compat +
-                   " maxFileSize=" + std::to_string(maxFileSizeMB) + "MB";
-
+        std::string msg = std::string("simplereaderd v") + SIMPLEREADERD_VERSION + " starting on " + Config::get().host() + ":" +
+                   std::to_string(Config::get().port()) + " (compat=" + Config::get().compat() +
+                   ", maxFileSize=" + std::to_string(Config::get().maxFileSizeMB()) + "MB)";
+        
         std::cout << msg << std::endl;
         syslog(LOG_INFO,"%s",msg.c_str());
 
-        /////////////////////////////////////////////////////////////
-        // start the server (app) and wait for http events/requests
+        ////////////////////////////////////////////////////////////////////////
+        // start sqlite server
+        //   
+        Database::get().open("/var/lib/simplereader/app.db");
+
+        ////////////////////////////////////////////////////////////////////////
+        // start the server (app) and wait for http events/requests to roll in
         //                  
+        registerLoginHandler();
+        registerRootHandler();
+        registerCheckHandler();
+        registerResolveHandler();
+        registerGetHandler();
+        registerGetSinceHandler();
+        registerGetBookHandler();
+        registerUploadBookHandler();
+        registerUpdateHandler();
+        registerDeleteHandler();
         std::cout << "Running..." << std::endl;
+        
         drogon::app()
-            .addListener(host, port)
-            .registerHandler("/", [](const drogon::HttpRequestPtr &,
-                                     std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
-                auto resp = drogon::HttpResponse::newHttpResponse();
-                resp->setBody("Hello, Simplereaderd!");
-                cb(resp);
-            })
+            .addListener(Config::get().host(), Config::get().port())
             .run();
 
     } catch (const std::exception &ex) {
@@ -68,7 +77,8 @@ int main() {
     }
 
     syslog(LOG_INFO, "simplereaderd shutting down");
+    Database::get().close();
     closelog();
-
+    return 0;
 }
 
