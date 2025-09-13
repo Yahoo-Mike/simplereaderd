@@ -1,5 +1,5 @@
 //****************************************
-// drogon handler for "POST /" requests 
+// drogon handler for "GET /" requests
 //****************************************
 
 #include <drogon/drogon.h>
@@ -10,10 +10,15 @@ int registerRootHandler(void) {
         "/",
         [](const drogon::HttpRequestPtr &,
             std::function<void (const drogon::HttpResponsePtr &)> &&cb) {
-            auto r = drogon::HttpResponse::newHttpResponse();
-            r->setBody("simplereaderd up");
+            Json::Value j;
+            j["ok"]  = true;            // use boolean true
+            j["status"] = "server up";
+            auto r = drogon::HttpResponse::newHttpJsonResponse(j);
+            r->setStatusCode(drogon::k200OK);
             cb(r);
-        });
+        },
+        {drogon::Get}   // limit to GET
+    );
 
     return 0;
 }
