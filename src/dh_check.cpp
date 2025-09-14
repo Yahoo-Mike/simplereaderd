@@ -62,14 +62,14 @@ int registerCheckHandler(void) {
                 Database& db = Database::get();
                 Database::RowState st;
 
-                if (table == "books") {
+                if (table == "books" || table == "book_data") {
                     const bool hasFileId = body.isMember("fileId") && body["fileId"].isString();
                     if (!hasFileId) 
                         return err("invalid_request","no fileId");
 
                     st = db.select_userBooks_byUserAndFileId(username, body["fileId"].asString());
                 }
-                else if (table == "bookmarks" || table == "highlights") {
+                else if (table == "bookmark" || table == "highlight") {
                     // Require fileId (string) and id (integer)
                     // "id" is a sequential unique index
                     if (!body.isMember("fileId") || !body["fileId"].isString()) 

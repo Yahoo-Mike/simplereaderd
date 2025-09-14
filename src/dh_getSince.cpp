@@ -62,11 +62,11 @@ int registerGetSinceHandler(void) {
                 Json::Value rows(Json::arrayValue);
                 long long nextSinceOut = since;
 
-                if (table == "books") {
+                if (table == "books" || table == "book_data") {
                     db.listUserBooksSince(username, since, limit, rows, nextSinceOut);
-                } else if (table == "bookmarks") {
+                } else if (table == "bookmark") {
                     db.listUserBookmarksSince(username, since, limit, rows, nextSinceOut);
-                } else if (table == "highlights") {
+                } else if (table == "highlight") {
                     db.listUserHighlightsSince(username, since, limit, rows, nextSinceOut);
                 } else {
                     return err("invalid_request","unknown tablename");

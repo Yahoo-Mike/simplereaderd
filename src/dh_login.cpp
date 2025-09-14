@@ -149,7 +149,7 @@ int registerLoginHandler(void) {
                 syslog(SYSLOG_INFO, "user [%s] logged in on unidentified device", username.c_str());
             } else {
                 syslog(SYSLOG_INFO, "user [%s] logged in on device [%s]", username.c_str(), device.c_str());
-}
+            }
             // Issue session token
             const auto token = makeToken(32);
             const auto expires = Clock::now() + std::chrono::seconds(tokenSecs);

@@ -87,7 +87,7 @@ int registerUpdateHandler(void) {
                 Database& db = Database::get();
 
 
-                if (table == "books") {
+                if (table == "books" || table == "book_data") {
                     if (!row.isMember("fileId") || !row["fileId"].isString())
                         return err("invalid_request","no fileId");
                     const std::string fileId = row["fileId"].asString();
@@ -108,7 +108,7 @@ int registerUpdateHandler(void) {
                     return ok(tnow);
                 }
 
-                if (table == "bookmarks") {
+                if (table == "bookmark") {
                     if (!row.isMember("fileId") || !row["fileId"].isString()) 
                         return err("invalid_request","no fileId");
                     if (!row.isMember("id")) 
@@ -136,7 +136,7 @@ int registerUpdateHandler(void) {
                     return ok(tnow);
                 }
 
-                if (table == "highlights") {
+                if (table == "highlight") {
                     if (!row.isMember("fileId") || !row["fileId"].isString()) 
                         return err("invalid_request","no fileId");
                     if (!row.isMember("id")) 

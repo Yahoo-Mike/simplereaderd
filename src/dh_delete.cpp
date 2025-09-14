@@ -54,7 +54,7 @@ int registerDeleteHandler(void) {
             try {
                 Database& db = Database::get();
 
-                if (table == "books") {
+                if (table == "books" || table == "book_data") {
                     // look up current state
                     auto st = db.select_userBooks_byUserAndFileId(username, fileId);
                     if (!st.exists && !st.deleted) 
@@ -68,7 +68,7 @@ int registerDeleteHandler(void) {
                     return ok(tnow);
                 }
 
-                if (table == "bookmarks") {
+                if (table == "bookmark") {
                     if (!body.isMember("id")) 
                         return err("invalid_request","no id");
                     long long itemId = 0; 
@@ -86,7 +86,7 @@ int registerDeleteHandler(void) {
                     return ok(tnow);
                 }
 
-                if (table == "highlights") {
+                if (table == "highlight") {
                     if (!body.isMember("id")) 
                         return err("invalid_request","no id");
                     long long itemId = 0; if (!parseItemId(body["id"], itemId)) 

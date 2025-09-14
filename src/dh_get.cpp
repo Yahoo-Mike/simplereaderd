@@ -53,11 +53,11 @@ int registerGetHandler(void) {
                 Database& db = Database::get();
                 Json::Value rows(Json::arrayValue);
 
-                if (table == "books") {
+                if (table == "books" || table == "book_data") {
                     db.listUserBook(username, fileId, rows);              // [0..1]
-                } else if (table == "bookmarks") {
+                } else if (table == "bookmark") {
                     db.listUserBookmarks(username, fileId, rows);         // [0..n]
-                } else if (table == "highlights") {
+                } else if (table == "highlight") {
                     db.listUserHighlights(username, fileId, rows);        // [0..n]
                 } else {
                     return err("invalid_request","unknown table");
