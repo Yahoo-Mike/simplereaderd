@@ -44,8 +44,7 @@ static std::string sha256_file_hex(const std::string& path) {
 int registerUploadBookHandler(void) {
     drogon::app().registerHandler("/uploadBook",
         [](const HttpRequestPtr& req, 
-           std::function<void (const HttpResponsePtr &)> &&cb,
-           const std::string& fileId) {
+           std::function<void (const HttpResponsePtr &)> &&cb) {
             auto ok = [&](const std::string& fileId, long long size, const std::string& sha){
                 Json::Value j; j["ok"]=true; 
                 j["fileId"]=fileId;
@@ -67,7 +66,8 @@ int registerUploadBookHandler(void) {
             auto httpErr = [&](drogon::HttpStatusCode sc, const char* code){
                 Json::Value j; j["ok"]=false; j["error"]=code;
                 auto r=drogon::HttpResponse::newHttpJsonResponse(j);
-                r->setStatusCode(sc); cb(r);
+                r->setStatusCode(sc);
+                cb(r);
             };
 
             // check whether token is valid
@@ -81,14 +81,14 @@ int registerUploadBookHandler(void) {
             if (parser.parse(req) != 0) 
                 return err("invalid_request","failed to parse");
 
-            std::string rfileId, shaHex;
+            std::string fileId, shaHex;
             long long sizeClaim = -1;
 
             for (const auto& p : parser.getParameters()) {
                 const auto& name = p.first; 
                 const auto& val = p.second;
                 if (name == "fileId") 
-                    rfileId = val;
+                    fileId = val;
                 else if (name == "sha256") 
                     shaHex = toLower(val);
                 else if (name == "size") {
@@ -102,14 +102,10 @@ int registerUploadBookHandler(void) {
             if (!isHex64(shaHex) || sizeClaim <= 0) 
                 return err("invalid_request","bad checksum");
 
-            if (rfileId != fileId) { // POST upload fileID  should match multi-part fileID
-                return err("server_error","fileIds do not match");
-            }
-
             const bool unknownId = fileId.empty() || fileId == "0";
 
             // policy size check (before writing to disk)
-            const long long maxSize = Config::get().maxFileSizeMB();
+            const long long maxSize = Config::get().maxFileSize();
             if ( (maxSize > 0) && (sizeClaim > maxSize) )
                 return err("too_large");
 
@@ -164,46 +160,6 @@ int registerUploadBookHandler(void) {
                 if (actualSha != shaHex) { 
                     cleanupTmp(); 
                     return err("checksum_mismatch"); 
-                }
-
-                // If client provided a fileId
-                if (!unknownId) {
-                    std::string existingPath, existingSha;
-                    long long existingSize = 0;
-                    if (db.getBookForDownload(fileId, existingPath, existingSize, existingSha)) {
-                        if (existingSize == actualSize && toLower(existingSha) == actualSha) {
-                            // ensure file exists on disk
-                            if (!fs::exists(existingPath)) {
-                                fs::create_directories(fs::path(existingPath).parent_path(), ec);
-                                if (ec) { 
-                                    cleanupTmp(); 
-                                    return err("server_error"); 
-                                }
-                                fs::rename(tmpPath, existingPath, ec);
-                                if (ec) {
-                                    fs::copy_file(tmpPath, existingPath, fs::copy_options::overwrite_existing, ec);
-                                    if (!ec) 
-                                        fs::remove(tmpPath, ec); 
-                                    else { 
-                                        cleanupTmp(); 
-                                        return err("server_error"); 
-                                    }
-                                }
-                            } else {
-                                cleanupTmp();
-                            }
-                            return ok(fileId, existingSize, actualSha);
-                        } else {
-                            cleanupTmp();
-                            return err("checksum_mismatch","same fileId, different content"); // same id, different content
-                        }
-                    }
-
-                    // no row under this fileId yet; but content may exist elsewhere
-                    if (auto existing = db.lookupFileIdByHashSize(actualSha, actualSize); !existing.empty()) {
-                        cleanupTmp();
-                        return ok(existing, actualSize, actualSha);
-                    }
                 }
 
                 // New asset: choose fileId (uuid if unknown)

@@ -34,6 +34,8 @@ struct Session {
 static std::unordered_map<std::string, Session> g_sessions;
 static std::mutex g_sessionsMutex;
 
+const int tokenLife = 60 * 60 ;     // how long a token is valid (in seconds)  (360=1hr)
+
 // the magic lives here
 static std::string makeToken(size_t bytes = 32) {
     std::random_device rd;
@@ -103,12 +105,10 @@ bool isValid(const std::string& token) {
 }
 
 int registerLoginHandler(void) {
-    int tokenSecs = 3600;     // 1 hour tokens
-    std::string compat = Config::get().compat();
 
     drogon::app().registerHandler(
         "/login",
-        [compat, tokenSecs](const HttpRequestPtr &req,
+        [](const HttpRequestPtr &req,
                             std::function<void (const HttpResponsePtr &)> &&cb) {
 
             if (req->method() != drogon::Post) {
@@ -130,6 +130,7 @@ int registerLoginHandler(void) {
             }
 
             // Version gate
+            const auto compat = Config::get().compat();
             if (version != compat) {
                 Json::Value j;
                 j["ok"] = false;
@@ -152,7 +153,7 @@ int registerLoginHandler(void) {
             }
             // Issue session token
             const auto token = makeToken(32);
-            const auto expires = Clock::now() + std::chrono::seconds(tokenSecs);
+            const auto expires = Clock::now() + std::chrono::seconds(tokenLife);
 
             {
                 std::lock_guard<std::mutex> lk(g_sessionsMutex);

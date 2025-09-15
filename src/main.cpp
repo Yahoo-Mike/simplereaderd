@@ -69,6 +69,11 @@ int main() {
         std::cout << "Running..." << std::endl;
         
         drogon::app()
+            .setClientMaxBodySize(Config::get().maxFileSize())             // limit upload requests to maxFileSize
+            .setClientMaxMemoryBodySize(2 * 1024 * 1024)                   // keep 2 MB in RAM, then packetize
+            .setUploadPath("/var/lib/simplereader/tmp");                   // temp dir for large files
+
+        drogon::app()
             .addListener(Config::get().host(), Config::get().port())
             .run();
 
