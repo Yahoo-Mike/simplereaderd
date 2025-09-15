@@ -109,15 +109,14 @@ int registerUploadBookHandler(void) {
             if ( (maxSize > 0) && (sizeClaim > maxSize) )
                 return err("too_large");
 
-            // If client doesn't know fileId: deduplicate by content first
+            // check whether we already have this file
             Database& db = Database::get();
 
-            auto actualSha = shaHex;
-            auto actualSize = sizeClaim;
-            if (unknownId) {
-                if (auto existing = db.lookupFileIdByHashSize(actualSha, actualSize); !existing.empty()) {
-                    return ok(existing, actualSize, actualSha);
-                }
+            std::string fid = db.lookupFileIdByHashSize(shaHex, sizeClaim);
+            if (!fid.empty()) {
+                // we already have this file, so tell the client it's all good, 
+                // and stop processing the file
+                return ok(fid, sizeClaim, shaHex);
             }
 
             // have file part?
@@ -125,17 +124,19 @@ int registerUploadBookHandler(void) {
             if (files.empty()) 
                 return err("invalid_request","getFiles() failed to parse");
 
-            // save upload to temp
+            // save uploaded file to temp
             fs::path tmpPath;
             try {
                 char templ[] = "/tmp/simplereader_upload_XXXXXX";
                 int fd = mkstemp(templ); 
                 if (fd == -1) 
-                    return err("server_error");
+                    return err("server_error","could not make tmp file");
                 close(fd);
                 tmpPath = templ;
                 files.front().saveAs(tmpPath.string());
-            } catch (...) { 
+            } catch (const std::exception& e) { 
+                return err("server_error",e.what()); 
+            } catch(...) {
                 return err("server_error"); 
             }
 
@@ -149,7 +150,8 @@ int registerUploadBookHandler(void) {
                 auto actualSize = (long long)fs::file_size(tmpPath, ec);
                 if (ec) { 
                     cleanupTmp(); 
-                    return err("server_error"); 
+                    std::string msg = ec.message() + " (" + ec.category().name() + ":" + std::to_string(ec.value()) + ")";
+                    return err("server_error",msg.c_str());
                 }
                 if (actualSize != sizeClaim) { 
                     cleanupTmp(); 
@@ -162,36 +164,39 @@ int registerUploadBookHandler(void) {
                     return err("checksum_mismatch"); 
                 }
 
-                // New asset: choose fileId (uuid if unknown)
-                std::string newId = unknownId ? drogon::utils::getUuid() : fileId;
+                // we need to allocate a fileId (uuid), as this is a new file
+                std::string newId = drogon::utils::getUuid();
 
                 // move into library
                 const fs::path libraryRoot = "/var/lib/simplereader/library";
                 fs::create_directories(libraryRoot, ec); 
                 if (ec) { 
                     cleanupTmp(); 
-                    return err("server_error"); 
+                    std::string msg = ec.message() + " (" + ec.category().name() + ":" + std::to_string(ec.value()) + ")";
+                    return err("server_error",msg.c_str()); 
                 }
 
                 const fs::path dstPath = libraryRoot / newId;
                 fs::rename(tmpPath, dstPath, ec);
-                if (ec) { // cross-device fallback
+                if (ec) { // failed to rename, so file must exist and so try to copy over it
                     fs::copy_file(tmpPath, dstPath, fs::copy_options::overwrite_existing, ec);
                     if (ec) { cleanupTmp(); 
-                        return err("server_error"); 
+                        std::string msg = ec.message() + " (" + ec.category().name() + ":" + std::to_string(ec.value()) + ")";
+                        return err("server_error",msg.c_str()); 
                     }
                     fs::remove(tmpPath, ec);
                 }
 
-                // insert row
+                // update the "books" db table with this book
                 const long long tnow = nowMs();
                 try {
                     db.insertBookRecord(newId, actualSha, actualSize, dstPath.string(), tnow);
                 } catch (...) {
                     // race: someone inserted first; look up by content and return that id
-                    if (auto existing = db.lookupFileIdByHashSize(actualSha, actualSize); !existing.empty())
-                        return ok(existing, actualSize, actualSha);
-                    return err("server_error");
+                    auto fid = db.lookupFileIdByHashSize(actualSha, actualSize);
+                    if (!fid.empty())
+                        return ok(fid, actualSize, actualSha);
+                    return err("server_error","could not update 'books' table");
                 }
 
                 return ok(newId, actualSize, actualSha);

@@ -316,6 +316,7 @@ Database::RowState Database::select_byUserFileAndItemId(const std::string& table
 
 /////////////////////////////////////////////////////////////
 // POST /resolve
+//  returns: fileId if found, otherwise null
 //
 std::string Database::lookupFileIdByHashSize(const std::string& sha256, long long filesize) {
     static const char* SQL =
