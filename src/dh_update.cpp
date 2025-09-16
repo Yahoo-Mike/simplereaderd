@@ -1,6 +1,7 @@
 //*******************************************
 // drogon handler for "POST /update" requests 
 //*******************************************
+#include <syslog.h>
 #include <drogon/drogon.h>
 
 #include "Database.h"
@@ -66,8 +67,11 @@ int registerUpdateHandler(void) {
             if (!bodyPtr)    return err("invalid_request","parsing failed");
             const auto& body = *bodyPtr;
 
+prettyJSON(body,"YM_DEBUG");
+
             if (!body.isMember("table") || !body["table"].isString()) 
                 return err("invalid_request","no tablename");
+
             if (!body.isMember("row")   || !body["row"].isObject())   
                 return err("invalid_request","no row data");
 

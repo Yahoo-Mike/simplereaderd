@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <string>
 
+#include <jsoncpp/json/value.h>
+
 // because Drogon redefines these, let's capture them as constants
 extern const int SYSLOG_INFO, SYSLOG_ERR, SYSLOG_DEBUG;
 
@@ -11,5 +13,6 @@ extern const int SYSLOG_INFO, SYSLOG_ERR, SYSLOG_DEBUG;
 [[noreturn]] void logFatal(const std::exception &ex, int exitCode);
 long long nowMs(void);
 bool isHex64(std::string& s);
+void prettyJSON(const Json::Value& json, const std::string hdr = "");
 
 #endif // SIMPLEREADER_UTILS_H

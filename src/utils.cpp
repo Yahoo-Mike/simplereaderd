@@ -11,6 +11,7 @@ const int SYSLOG_DEBUG = LOG_DEBUG;
 #include <iostream>
 #include <chrono>
 
+#include <jsoncpp/json/writer.h>
 
 // for logging fatal exceptions to syslog
 [[noreturn]] void logFatal(const std::exception &ex, int exitCode) {
@@ -35,4 +36,13 @@ bool isHex64(std::string& s) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); // normalize lowercase
     }
     return true;
+}
+
+void prettyJSON(const Json::Value& json, const std::string hdr) {
+
+  Json::StreamWriterBuilder wb;
+  wb["indentation"] = "";            // one-line
+  std::string s = Json::writeString(wb, json);
+  syslog(SYSLOG_DEBUG, "%s%s", hdr.c_str(), s.c_str());
+
 }

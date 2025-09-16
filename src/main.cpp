@@ -16,6 +16,7 @@
 #include "dh_uploadBook.h"
 #include "dh_update.h"
 #include "dh_delete.h"
+#include "dh_ruOK.h"
 #include "utils.h"
 #include "version.h"
 
@@ -66,6 +67,7 @@ int main() {
         registerUploadBookHandler();
         registerUpdateHandler();
         registerDeleteHandler();
+        registerRUOKHandler();
         std::cout << "Running..." << std::endl;
         
         drogon::app()

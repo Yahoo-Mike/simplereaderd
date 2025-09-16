@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>    // for close()
+#include <syslog.h>
 
 #include <drogon/drogon.h>
 #include <sodium.h>
@@ -114,9 +115,16 @@ int registerUploadBookHandler(void) {
 
             std::string fid = db.lookupFileIdByHashSize(shaHex, sizeClaim);
             if (!fid.empty()) {
-                // we already have this file, so tell the client it's all good, 
-                // and stop processing the file
-                return ok(fid, sizeClaim, shaHex);
+                // doublecheck we physically have it on the disk.  If we do, we can stop processing.
+                fs::path p = fs::path("/var/lib/simplereader/library") / fs::path(fileId).filename();
+                std::error_code ec;
+                bool exists = fs::is_regular_file(p,ec);
+syslog(SYSLOG_DEBUG,"YM DEBUG: file [%s] exists [%s]", p.string().c_str(), exists ? "true" : "false");
+                if (exists) {
+                    // we already have this file, so tell the client it's all good, 
+                    // and stop processing the file
+                    return ok(fid, sizeClaim, shaHex);
+                }
             }
 
             // have file part?
