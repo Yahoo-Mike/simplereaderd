@@ -1,3 +1,3 @@
 // version.h
 #pragma once
-inline constexpr const char* SIMPLEREADERD_VERSION = "0.1.0";
+inline constexpr const char* SIMPLEREADERD_VERSION = "0.2.0";
