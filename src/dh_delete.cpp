@@ -65,6 +65,10 @@ int registerDeleteHandler(void) {
 
                     const long long tnow = nowMs();
                     db.softDeleteUserBook(username, fileId, tnow);
+
+                    // also soft delete bookmarks and highlights for this fileId
+                    db.softDeleteUserBookmarkAll(username,fileId,tnow);
+                    db.softDeleteUserHighlightAll(username,fileId,tnow);
                     return ok(tnow);
                 }
 

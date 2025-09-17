@@ -1,6 +1,7 @@
-//*******************************************
+//**********************************************
 // drogon handler for "GET /ruOK" requests 
-//*******************************************
+//    use this as a heartbeat and token verifier
+//**********************************************
 #include <drogon/drogon.h>
 
 #include "Database.h"

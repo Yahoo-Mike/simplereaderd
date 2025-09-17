@@ -90,7 +90,6 @@ prettyJSON(body,"YM_DEBUG");
             try {
                 Database& db = Database::get();
 
-
                 if (table == "books" || table == "book_data") {
                     if (!row.isMember("fileId") || !row["fileId"].isString())
                         return err("invalid_request","no fileId");

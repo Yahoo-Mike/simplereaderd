@@ -804,6 +804,39 @@ void Database::softDeleteUserHighlight(const std::string& user, const std::strin
     }
     sqlite3_finalize(s);
 }
+void Database::softDeleteUserBookmarkAll(const std::string& user, const std::string& fileId, long long tnow) {
+    static const char* SQL =
+        "UPDATE user_bookmarks SET deleted_at=?3, updated_at=?3 WHERE username=?1 AND file_id=?2";
+    sqlite3_stmt* s=nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (softDeleteUserBookmarkAll)");
+    sqlite3_bind_text (s, 1, user.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (s, 2, fileId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
+    int rc = sqlite3_step(s);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(s);
+        throw std::runtime_error(std::string("sqlite step failed (softDeleteUserBookmarkAll): ") + sqlite3_errmsg(db_));
+    }
+    sqlite3_finalize(s);
+}
+
+void Database::softDeleteUserHighlightAll(const std::string& user, const std::string& fileId, long long tnow) {
+    static const char* SQL =
+        "UPDATE user_highlights SET deleted_at=?3, updated_at=?3 WHERE username=?1 AND file_id=?2";
+    sqlite3_stmt* s=nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (softDeleteUserHighlightAll)");
+    sqlite3_bind_text (s, 1, user.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (s, 2, fileId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
+    int rc = sqlite3_step(s);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(s);
+        throw std::runtime_error(std::string("sqlite step failed (softDeleteUserHighlightAll): ") + sqlite3_errmsg(db_));
+    }
+    sqlite3_finalize(s);
+}
 
 /////////////////////////////////////////////////////////////
 // GET /book

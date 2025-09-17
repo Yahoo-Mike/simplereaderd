@@ -70,6 +70,8 @@ class Database {
         void softDeleteUserBook(const std::string& user, const std::string& fileId, long long nowMs);
         void softDeleteUserBookmark(const std::string& user, const std::string& fileId, long long id, long long nowMs);
         void softDeleteUserHighlight(const std::string& user, const std::string& fileId, long long id, long long nowMs);
+        void softDeleteUserBookmarkAll(const std::string& user, const std::string& fileId, long long nowMs);
+        void softDeleteUserHighlightAll(const std::string& user, const std::string& fileId, long long nowMs);
 
         // for GET /book
         bool getBookForDownload(const std::string& fileId, std::string& locationOut,
