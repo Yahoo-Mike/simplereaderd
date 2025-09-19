@@ -74,12 +74,12 @@ class Database {
         void softDeleteUserHighlightAll(const std::string& user, const std::string& fileId, long long nowMs);
 
         // for GET /book
-        bool getBookForDownload(const std::string& fileId, std::string& locationOut,
+        std::string getBookForDownload(const std::string& fileId, std::string& locationOut,
                                 long long& filesizeOut, std::string& sha256Out);
 
         // for /uploadBook
         void insertBookRecord(const std::string& fileId, const std::string& sha256, long long filesize,
-                              const std::string& location, long long updatedAt);
+                              const std::string& location, const std::string& clientFileName, long long updatedAt);
 
     private:
         sqlite3* db_ = nullptr;

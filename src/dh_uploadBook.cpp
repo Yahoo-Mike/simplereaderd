@@ -1,9 +1,9 @@
 //**************************************************
-// drogon handler for "GET /book/{fileId}" requests 
+// drogon handler for "POST uploadBook" requests 
 //**************************************************
 #include <filesystem>
 #include <fstream>
-#include <unistd.h>    // for close()
+#include <unistd.h>
 #include <syslog.h>
 
 #include <drogon/drogon.h>
@@ -46,11 +46,12 @@ int registerUploadBookHandler(void) {
     drogon::app().registerHandler("/uploadBook",
         [](const HttpRequestPtr& req, 
            std::function<void (const HttpResponsePtr &)> &&cb) {
-            auto ok = [&](const std::string& fileId, long long size, const std::string& sha){
+            auto ok = [&](const std::string& fileId, long long size, const std::string& sha, const std::string& filename){
                 Json::Value j; j["ok"]=true; 
                 j["fileId"]=fileId;
                 j["size"]=Json::Int64(size); 
                 j["sha256"]=sha;
+                j["fileName"]=filename;
                 auto r=drogon::HttpResponse::newHttpJsonResponse(j);
                 r->setStatusCode(drogon::k200OK); cb(r);
             };
@@ -82,13 +83,13 @@ int registerUploadBookHandler(void) {
             if (parser.parse(req) != 0) 
                 return err("invalid_request","failed to parse");
 
-            std::string fileId, shaHex;
+            std::string fileId, shaHex,clientFileName;
             long long sizeClaim = -1;
 
             for (const auto& p : parser.getParameters()) {
                 const auto& name = p.first; 
                 const auto& val = p.second;
-                if (name == "fileId") 
+                if (name == "fileId")
                     fileId = val;
                 else if (name == "sha256") 
                     shaHex = toLower(val);
@@ -98,10 +99,13 @@ int registerUploadBookHandler(void) {
                     } catch (...) {
                          return err("invalid_request","bad filesize"); 
                     }
-                }
+                } else if (name == "fileName")
+                    clientFileName = val;
             }
             if (!isHex64(shaHex) || sizeClaim <= 0) 
                 return err("invalid_request","bad checksum");
+            if (clientFileName.empty())
+                clientFileName = fileId; // default to fileId, which is terrible but the best I can do
 
             const bool unknownId = fileId.empty() || fileId == "0";
 
@@ -119,11 +123,10 @@ int registerUploadBookHandler(void) {
                 fs::path p = fs::path("/var/lib/simplereader/library") / fs::path(fileId).filename();
                 std::error_code ec;
                 bool exists = fs::is_regular_file(p,ec);
-syslog(SYSLOG_DEBUG,"YM DEBUG: file [%s] exists [%s]", p.string().c_str(), exists ? "true" : "false");
                 if (exists) {
                     // we already have this file, so tell the client it's all good, 
                     // and stop processing the file
-                    return ok(fid, sizeClaim, shaHex);
+                    return ok(fid, sizeClaim, shaHex,clientFileName);
                 }
             }
 
@@ -198,16 +201,15 @@ syslog(SYSLOG_DEBUG,"YM DEBUG: file [%s] exists [%s]", p.string().c_str(), exist
                 // update the "books" db table with this book
                 const long long tnow = nowMs();
                 try {
-                    db.insertBookRecord(newId, actualSha, actualSize, dstPath.string(), tnow);
+                    db.insertBookRecord(newId, actualSha, actualSize, dstPath.string(), clientFileName, tnow);
                 } catch (...) {
                     // race: someone inserted first; look up by content and return that id
                     auto fid = db.lookupFileIdByHashSize(actualSha, actualSize);
-                    if (!fid.empty())
-                        return ok(fid, actualSize, actualSha);
-                    return err("server_error","could not update 'books' table");
+                    if (fid.empty())
+                        return err("server_error","could not update 'books' table");
                 }
 
-                return ok(newId, actualSize, actualSha);
+                return ok(newId, actualSize, actualSha, clientFileName);
             } catch (...) {
                 cleanupTmp();
                 return err("server_error");

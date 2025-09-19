@@ -17,13 +17,14 @@ int registerGetBookHandler(void) {
            std::function<void (const HttpResponsePtr &)> &&cb,
            const std::string& fileId) {
 
-            auto jsonErr = [&](drogon::HttpStatusCode sc, const char* code) {
-                Json::Value j; j["ok"] = false; j["error"] = code;
+            auto jsonErr = [&](drogon::HttpStatusCode sc, const char* errMsg) {
+                Json::Value j;
+                j["ok"] = false;
+                j["error"] = errMsg;
                 auto r = drogon::HttpResponse::newHttpJsonResponse(j);
                 r->setStatusCode(sc);
                 cb(r);
             };
-
             // check whether token is valid
             const std::string token    = bearerToken(req);
             const std::string username = usernameIfValid(token);  // empty if invalid/expired
@@ -31,11 +32,12 @@ int registerGetBookHandler(void) {
                 return jsonErr(drogon::k401Unauthorized, "unauthorised");
 
             // --- lookup book metadata ---
-            std::string path, sha256;
+            std::string path, sha256, clientFileName;
             long long   size = 0;
             try {
-                if (!Database::get().getBookForDownload(fileId, path, size, sha256)) {
-                    return jsonErr(drogon::k404NotFound, "not_found");
+                clientFileName = Database::get().getBookForDownload(fileId, path, size, sha256);
+                if (clientFileName.empty()) {
+                    return jsonErr(drogon::k404NotFound, "book record not found");
                 }
             } catch (...) {
                 return jsonErr(drogon::k500InternalServerError, "server_error");
@@ -45,24 +47,24 @@ int registerGetBookHandler(void) {
             namespace fs = std::filesystem;
             std::error_code ec;
             if (!fs::exists(path, ec) || ec) {
-                return jsonErr(drogon::k500InternalServerError, "server_error");
+                return jsonErr(drogon::k404NotFound, "file not found");
             }
             auto actualSize = fs::file_size(path, ec);
             if (ec || (size >= 0 && static_cast<long long>(actualSize) != size)) {
                 // size mismatch: treat as server error (index corrupt)
-                return jsonErr(drogon::k500InternalServerError, "server_error");
+                return jsonErr(drogon::k500InternalServerError, "size mismatch");
             }        
 
             // --- stream the file ---
             auto resp = drogon::HttpResponse::newFileResponse(
                 path,
-                "",  // no Content-Disposition filename
+                clientFileName,
                 drogon::CT_APPLICATION_OCTET_STREAM
             );
             resp->setStatusCode(drogon::k200OK);
             resp->addHeader("X-Checksum-SHA256", sha256);
-            resp->addHeader("Content-Length", std::to_string(actualSize));  // Drogon sets this too; being explicit is fine
-
+            resp->addHeader("X-Filename", clientFileName);
+            resp->addHeader("Content-Length", std::to_string(actualSize));
             cb(resp);
         },
         {drogon::Get}  // limit to GET

@@ -86,6 +86,8 @@ void Database::initSchema(void) {
         //    sha256     TEXT NOT NULL CHECK (length(sha256) = 64), // checksum of file
         //    filesize   INTEGER NOT NULL CHECK (filesize >= 0),    // size of the file
         //    location   TEXT NOT NULL,                             // physical location on server (/var/lib/simplereader/library/...)
+        //    filename   TEXT NOT NULL,                             // filename used by the client (not by the server).  
+        //                                                          // Used when downloading to tell client what to call the file.
         //    updated_at INTEGER NOT NULL );                        // UTC time when book was added to the library
         //
         //****************************************************************
@@ -95,6 +97,7 @@ void Database::initSchema(void) {
               sha256     TEXT NOT NULL CHECK (length(sha256) = 64),
               filesize   INTEGER NOT NULL CHECK (filesize >= 0),
               location   TEXT NOT NULL,
+              filename   TEXT NOT NULL,
               updated_at INTEGER NOT NULL,
               UNIQUE (sha256, filesize)
             );
@@ -366,14 +369,14 @@ void Database::listUserBook(const std::string& username, const std::string& file
         const long long del = hasDel ? sqlite3_column_int64(stmt, 2) : 0;
 
         Json::Value row(Json::objectValue);
-        row["fileId"]    = fileId;
         row["progress"]  = prog ? prog : "";
-        row["updatedAt"] = static_cast<Json::Int64>(hasDel ? del : upd);
-        row["deleted"]   = hasDel;
+        row["updatedAt"] = static_cast<Json::Int64>(upd);
+        if (del != 0)
+            row["deletedAt"]   = static_cast<Json::Int64>(del);
         rowsOut.append(row);
     } else if (rc != SQLITE_DONE) {
         sqlite3_finalize(stmt);
-        throw std::runtime_error(std::string("sqlite step failed (appendUserBook): ") + sqlite3_errmsg(db_));
+        throw std::runtime_error(std::string("sqlite step failed (listUserBook): ") + sqlite3_errmsg(db_));
     }
 
     sqlite3_finalize(stmt);
@@ -400,7 +403,6 @@ void Database::listUserBookmarks(const std::string& username, const std::string&
         }
 
         Json::Value row(Json::objectValue);
-        row["fileId"]    = fileId;
         row["id"]        = static_cast<Json::Int64>(sqlite3_column_int64(stmt, 0));
         const char* loc  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* lab  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
@@ -410,8 +412,9 @@ void Database::listUserBookmarks(const std::string& username, const std::string&
 
         row["locator"]   = loc ? loc : "";
         if (lab) row["label"] = lab;
-        row["updatedAt"] = static_cast<Json::Int64>(hasDel ? del : upd);
-        row["deleted"]   = hasDel;
+        row["updatedAt"] = static_cast<Json::Int64>(upd);
+        if (del != 0)
+            row["deletedAt"]   = static_cast<Json::Int64>(del);
 
         rowsOut.append(row);
     }
@@ -440,7 +443,6 @@ void Database::listUserHighlights(const std::string& username, const std::string
         }
 
         Json::Value row(Json::objectValue);
-        row["fileId"]    = fileId;
         row["id"]        = static_cast<Json::Int64>(sqlite3_column_int64(stmt, 0));
         const char* sel  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* lab  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
@@ -452,8 +454,9 @@ void Database::listUserHighlights(const std::string& username, const std::string
         row["selection"] = sel ? sel : "";
         if (lab) row["label"]   = lab;
         if (col) row["colour"]  = col;
-        row["updatedAt"] = static_cast<Json::Int64>(hasDel ? del : upd);
-        row["deleted"]   = hasDel;
+        row["updatedAt"] = static_cast<Json::Int64>(upd);
+        if (del != 0)
+            row["deletedAt"]   = static_cast<Json::Int64>(del);
 
         rowsOut.append(row);
     }
@@ -840,29 +843,33 @@ void Database::softDeleteUserHighlightAll(const std::string& user, const std::st
 
 /////////////////////////////////////////////////////////////
 // GET /book
-bool Database::getBookForDownload(const std::string& fileId,
+//
+// returns: empty string if there was an error
+//          name by which the client knows this book
+std::string Database::getBookForDownload(const std::string& fileId,
                                   std::string& locationOut,
                                   long long&   filesizeOut,
                                   std::string& sha256Out) {
     static const char* SQL =
-        "SELECT location, filesize, sha256 FROM books WHERE file_id=?1 LIMIT 1";
+        "SELECT location, filesize, sha256, filename FROM books WHERE file_id=?1 LIMIT 1";
     sqlite3_stmt* s = nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
         throw std::runtime_error("prepare failed (getBookForDownload)");
 
     sqlite3_bind_text(s, 1, fileId.c_str(), -1, SQLITE_TRANSIENT);
 
-    bool ok = false;
+    std::string clientFileName;
     int rc = sqlite3_step(s);
     if (rc == SQLITE_ROW) {
         const char* loc = reinterpret_cast<const char*>(sqlite3_column_text(s, 0));
         const long long sz = sqlite3_column_int64(s, 1);
         const char* hash = reinterpret_cast<const char*>(sqlite3_column_text(s, 2));
+        const char* fn = reinterpret_cast<const char*>(sqlite3_column_text(s, 3));
         if (loc && hash) {
             locationOut = loc;
             filesizeOut = sz;
             sha256Out   = hash;
-            ok = true;
+            clientFileName = fn;
         }
     } else if (rc != SQLITE_DONE) {
         sqlite3_finalize(s);
@@ -870,7 +877,7 @@ bool Database::getBookForDownload(const std::string& fileId,
                                  + sqlite3_errmsg(db_));
     }
     sqlite3_finalize(s);
-    return ok;
+    return clientFileName;
 }
 
 /////////////////////////////////////////////////////////////
@@ -879,10 +886,11 @@ void Database::insertBookRecord(const std::string& fileId,
                                 const std::string& sha256,
                                 long long filesize,
                                 const std::string& location,
+                                const std::string& clientFileName,
                                 long long updatedAt) {
     static const char* SQL =
-        "INSERT INTO books(file_id, sha256, filesize, location, updated_at) "
-        "VALUES (?1, ?2, ?3, ?4, ?5)";
+        "INSERT INTO books(file_id, sha256, filesize, location, filename, updated_at) "
+        "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
     sqlite3_stmt* s=nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
         throw std::runtime_error("prepare failed (insertBookRecord)");
@@ -890,7 +898,8 @@ void Database::insertBookRecord(const std::string& fileId,
     sqlite3_bind_text (s, 2, sha256.c_str(),    -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(filesize));
     sqlite3_bind_text (s, 4, location.c_str(),  -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(s, 5, static_cast<sqlite3_int64>(updatedAt));
+    sqlite3_bind_text (s, 5, clientFileName.c_str(),  -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 6, static_cast<sqlite3_int64>(updatedAt));
 
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
