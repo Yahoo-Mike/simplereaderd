@@ -40,10 +40,10 @@ class Database {
         void listUserBook(const std::string& username, const std::string& fileId, Json::Value& rowsOut);
 
         // Bookmarks: append rows: {fileId, id, locator, label, updatedAt, deleted}
-        void listUserBookmarks(const std::string& username, const std::string& fileId, Json::Value& rowsOut);
+        void listUserBookmarks(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut);
 
         // Highlights: append rows: {fileId, id, selection, label, colour, updatedAt, deleted}
-        void listUserHighlights(const std::string& username, const std::string& fileId, Json::Value& rowsOut);
+        void listUserHighlights(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut);
 
         // for /getSince
         void listUserBooksSince(const std::string& username, long long since, int limit,

@@ -38,7 +38,8 @@ int registerGetHandler(void) {
 
             // parse and validate json
             auto bodyPtr = req->getJsonObject();      // Drogon parses for us
-            if (!bodyPtr)    return err("invalid_request","parsing failed");
+            if (!bodyPtr)
+                return err("invalid_request","parsing failed");
             const auto& body = *bodyPtr;
 
             if (!body.isMember("table") || !body["table"].isString())
@@ -46,8 +47,13 @@ int registerGetHandler(void) {
             if (!body.isMember("fileId") || !body["fileId"].isString())
                 return err("invalid_request", "no fileId");
 
+            bool hasId = body.isMember("id");
+            if (hasId && !body["id"].isInt())
+                return err("invalid_request", "invalid id");
+
             const std::string table  = body["table"].asString();
             const std::string fileId = body["fileId"].asString();
+            const int id = hasId ? body["id"].asInt() : -1;   // -1 signals listUser*() to return all rows, not just one
 
             try {
                 Database& db = Database::get();
@@ -56,9 +62,9 @@ int registerGetHandler(void) {
                 if (table == "books" || table == "book_data") {
                     db.listUserBook(username, fileId, rows);              // [0..1]
                 } else if (table == "bookmark") {
-                    db.listUserBookmarks(username, fileId, rows);         // [0..n]
+                    db.listUserBookmarks(username, fileId, id, rows);         // [0..n]
                 } else if (table == "highlight") {
-                    db.listUserHighlights(username, fileId, rows);        // [0..n]
+                    db.listUserHighlights(username, fileId, id, rows);        // [0..n]
                 } else {
                     return err("invalid_request","unknown table");
                 }

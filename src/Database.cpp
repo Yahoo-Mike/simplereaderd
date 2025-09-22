@@ -1,8 +1,10 @@
+#include <syslog.h>
 #include <stdexcept>
 
 #include <sodium.h>
 
 #include "Database.h"
+#include "utils.h"
 
 Database& Database::get() {
     static Database instance;   // created once, destroyed at program exit
@@ -274,6 +276,8 @@ static Database::RowState fetchRowState(sqlite3* db, sqlite3_stmt* stmt) {
         return st; // default: exists=false, deleted=false
 
     // rc is an error code
+    syslog(SYSLOG_ERR,"fetchRowState() rc=%d %s", rc, sqlite3_errmsg(db));
+
     throw std::runtime_error(std::string("sqlite step failed: ") + sqlite3_errmsg(db));
 }
 
@@ -338,6 +342,7 @@ std::string Database::lookupFileIdByHashSize(const std::string& sha256, long lon
         const unsigned char* txt = sqlite3_column_text(stmt, 0);
         if (txt) fileId.assign(reinterpret_cast<const char*>(txt));
     } else if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"lookupFileIdByHashSize() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(stmt);
         throw std::runtime_error(std::string("sqlite step failed: ") + sqlite3_errmsg(db_));
     }
@@ -375,6 +380,7 @@ void Database::listUserBook(const std::string& username, const std::string& file
             row["deletedAt"]   = static_cast<Json::Int64>(del);
         rowsOut.append(row);
     } else if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"listUserBook() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(stmt);
         throw std::runtime_error(std::string("sqlite step failed (listUserBook): ") + sqlite3_errmsg(db_));
     }
@@ -382,10 +388,13 @@ void Database::listUserBook(const std::string& username, const std::string& file
     sqlite3_finalize(stmt);
 }
 
-void Database::listUserBookmarks(const std::string& username, const std::string& fileId, Json::Value& rowsOut) {
-    static const char* SQL =
-        "SELECT id, locator, label, updated_at, deleted_at "
-        "FROM user_bookmarks WHERE username=?1 AND file_id=?2 ORDER BY id ASC";
+void Database::listUserBookmarks(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut) {
+    static const char* SQL_ALL = "SELECT id, locator, label, updated_at, deleted_at "
+                                 "FROM user_bookmarks WHERE username=?1 AND file_id=?2 ORDER BY id ASC";
+    static const char* SQL_ONE = "SELECT id, locator, label, updated_at, deleted_at "
+                                 "FROM user_bookmarks WHERE username=?1 AND file_id=?2 AND id=?3";
+
+    const char* SQL = (id<0) ? SQL_ALL : SQL_ONE;
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
@@ -393,11 +402,14 @@ void Database::listUserBookmarks(const std::string& username, const std::string&
 
     sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, fileId.c_str(),   -1, SQLITE_TRANSIENT);
+    if (id >= 0)
+        sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(id));
 
     for (;;) {
         const int rc = sqlite3_step(stmt);
         if (rc == SQLITE_DONE) break;
         if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserBookmarks() rc=%d %s", rc, sqlite3_errmsg(db_));
             sqlite3_finalize(stmt);
             throw std::runtime_error(std::string("sqlite step failed (listUserBookmarks): ") + sqlite3_errmsg(db_));
         }
@@ -422,10 +434,13 @@ void Database::listUserBookmarks(const std::string& username, const std::string&
     sqlite3_finalize(stmt);
 }
 
-void Database::listUserHighlights(const std::string& username, const std::string& fileId, Json::Value& rowsOut) {
-    static const char* SQL =
-        "SELECT id, selection, label, colour, updated_at, deleted_at "
-        "FROM user_highlights WHERE username=?1 AND file_id=?2 ORDER BY id ASC";
+void Database::listUserHighlights(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut) {
+    static const char* SQL_ALL = "SELECT id, selection, label, colour, updated_at, deleted_at "
+                                 "FROM user_highlights WHERE username=?1 AND file_id=?2 ORDER BY id ASC";
+    static const char* SQL_ONE = "SELECT id, selection, label, colour, updated_at, deleted_at "
+                                 "FROM user_highlights WHERE username=?1 AND file_id=?2 AND id=?3";
+
+    const char* SQL = (id<0) ? SQL_ALL : SQL_ONE;
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
@@ -433,11 +448,14 @@ void Database::listUserHighlights(const std::string& username, const std::string
 
     sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, fileId.c_str(),   -1, SQLITE_TRANSIENT);
+    if (id >= 0)
+        sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(id));
 
     for (;;) {
         const int rc = sqlite3_step(stmt);
         if (rc == SQLITE_DONE) break;
         if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserHighlights() rc=%d %s", rc, sqlite3_errmsg(db_));
             sqlite3_finalize(stmt);
             throw std::runtime_error(std::string("sqlite step failed (listUserHighlights): ") + sqlite3_errmsg(db_));
         }
@@ -507,6 +525,7 @@ void Database::listUserBooksSince(const std::string& username, long long since, 
         int rc = sqlite3_step(stmt);
         if (rc == SQLITE_DONE) break;
         if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserBooksSince() rc=%d %s", rc, sqlite3_errmsg(db_));
             sqlite3_finalize(stmt);
             throw std::runtime_error(std::string("sqlite step failed (scanUserBooksSince): ")
                                      + sqlite3_errmsg(db_));
@@ -559,6 +578,7 @@ void Database::listUserBookmarksSince(const std::string& username, long long sin
         int rc = sqlite3_step(stmt);
         if (rc == SQLITE_DONE) break;
         if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserBookmarksSince() rc=%d %s", rc, sqlite3_errmsg(db_));
             sqlite3_finalize(stmt);
             throw std::runtime_error(std::string("sqlite step failed (scanUserBookmarksSince): ")
                                      + sqlite3_errmsg(db_));
@@ -615,6 +635,7 @@ void Database::listUserHighlightsSince(const std::string& username, long long si
         int rc = sqlite3_step(stmt);
         if (rc == SQLITE_DONE) break;
         if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserHighlightsSince() rc=%d %s", rc, sqlite3_errmsg(db_));
             sqlite3_finalize(stmt);
             throw std::runtime_error(std::string("sqlite step failed (scanUserHighlightsSince): ")
                                      + sqlite3_errmsg(db_));
@@ -673,6 +694,7 @@ void Database::insertUserBook(const std::string& username, const std::string& fi
     sqlite3_bind_int (stmt, 5, resurrect ? 1 : 0);
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"insertUserBook() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(stmt);
         throw std::runtime_error(std::string("sqlite step failed (insertUserBook): ") + sqlite3_errmsg(db_));
     }
@@ -707,6 +729,7 @@ void Database::insertUserBookmark(const std::string& username, const std::string
 
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"insertUserBookmark() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(stmt);
         throw std::runtime_error(std::string("sqlite step failed (insertUserBookmark): ") + sqlite3_errmsg(db_));
     }
@@ -747,6 +770,7 @@ void Database::insertUserHighlight(const std::string& username, const std::strin
 
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"insertUserHighlight() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(stmt);
         throw std::runtime_error(std::string("sqlite step failed (insertUserHighlight): ") + sqlite3_errmsg(db_));
     }
@@ -755,20 +779,23 @@ void Database::insertUserHighlight(const std::string& username, const std::strin
 
 /////////////////////////////////////////////////////////////
 // POST /delete
-void Database::softDeleteUserBook(const std::string& user, const std::string& fileId, long long tnow) {
+void Database::softDeleteUserBook(const std::string& user, const std::string& fileId, long long tm) {
     static const char* SQL =
         "UPDATE user_books SET deleted_at=?3, updated_at=?3 WHERE username=?1 AND file_id=?2";
+
     sqlite3_stmt* s=nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
         throw std::runtime_error("prepare failed (softDeleteUserBook)");
     sqlite3_bind_text (s, 1, user.c_str(),   -1, SQLITE_TRANSIENT);
     sqlite3_bind_text (s, 2, fileId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
+    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tm));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteUserBook() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserBook): ") + sqlite3_errmsg(db_));
     }
+
     sqlite3_finalize(s);
 }
 
@@ -784,6 +811,7 @@ void Database::softDeleteUserBookmark(const std::string& user, const std::string
     sqlite3_bind_int64(s, 4, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteUserBookmark() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserBookmark): ") + sqlite3_errmsg(db_));
     }
@@ -802,6 +830,7 @@ void Database::softDeleteUserHighlight(const std::string& user, const std::strin
     sqlite3_bind_int64(s, 4, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteUserHighlight() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserHighlight): ") + sqlite3_errmsg(db_));
     }
@@ -818,6 +847,7 @@ void Database::softDeleteUserBookmarkAll(const std::string& user, const std::str
     sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteuserHighlight() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserBookmarkAll): ") + sqlite3_errmsg(db_));
     }
@@ -835,6 +865,7 @@ void Database::softDeleteUserHighlightAll(const std::string& user, const std::st
     sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteuserHighlightAll() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserHighlightAll): ") + sqlite3_errmsg(db_));
     }
@@ -872,6 +903,7 @@ std::string Database::getBookForDownload(const std::string& fileId,
             clientFileName = fn;
         }
     } else if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"getBookForDownload() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (getBookForDownload): ")
                                  + sqlite3_errmsg(db_));
@@ -903,6 +935,7 @@ void Database::insertBookRecord(const std::string& fileId,
 
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"insertBookRecord() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (insertBookRecord): ")
                                  + sqlite3_errmsg(db_));
