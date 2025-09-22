@@ -48,6 +48,10 @@ int registerDeleteHandler(void) {
             if (!body.isMember("fileId") || !body["fileId"].isString()) 
                 return err("invalid_request","no fileId");
 
+            bool hasId = body.isMember("id");
+            if (hasId && !body["id"].isInt())
+                return err("invalid_request", "invalid id");
+
             const std::string table  = body["table"].asString();
             const std::string fileId = body["fileId"].asString();
 
@@ -73,7 +77,7 @@ int registerDeleteHandler(void) {
                 }
 
                 if (table == "bookmark") {
-                    if (!body.isMember("id")) 
+                    if (!hasId)
                         return err("invalid_request","no id");
                     long long itemId = 0; 
                     if (!parseItemId(body["id"], itemId)) 
@@ -91,9 +95,10 @@ int registerDeleteHandler(void) {
                 }
 
                 if (table == "highlight") {
-                    if (!body.isMember("id")) 
+                    if (!hasId)
                         return err("invalid_request","no id");
-                    long long itemId = 0; if (!parseItemId(body["id"], itemId)) 
+                    long long itemId = 0;
+                    if (!parseItemId(body["id"], itemId))
                         return err("invalid_request","bad id");
 
                     auto st = db.select_byUserFileAndItemId("user_highlights", username, fileId, itemId);
