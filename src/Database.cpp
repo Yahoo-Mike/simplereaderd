@@ -544,7 +544,8 @@ void Database::listUserBooksSince(const std::string& username, long long since, 
             row["fileId"]    = fileId ? fileId : "";
             row["progress"]  = prog ? prog : "";
             row["updatedAt"] = static_cast<Json::Int64>(ts);
-            row["deleted"]   = hasDel;
+            if (hasDel)
+                row["deletedAt"] = static_cast<Json::Int64>(del);
             rowsOut.append(row);
         }
         ++count;
@@ -601,7 +602,8 @@ void Database::listUserBookmarksSince(const std::string& username, long long sin
             row["locator"]   = loc ? loc : "";
             if (lab) row["label"] = lab;
             row["updatedAt"] = static_cast<Json::Int64>(ts);
-            row["deleted"]   = hasDel;
+            if (hasDel)
+                row["deletedAt"] = static_cast<Json::Int64>(del);
             rowsOut.append(row);
         }
         ++count;
@@ -660,7 +662,8 @@ void Database::listUserHighlightsSince(const std::string& username, long long si
             if (lab) row["label"]  = lab;
             if (col) row["colour"] = col;
             row["updatedAt"] = static_cast<Json::Int64>(ts);
-            row["deleted"]   = hasDel;
+            if (hasDel)
+                row["deletedAt"] = static_cast<Json::Int64>(del);
             rowsOut.append(row);
         }
         ++count;

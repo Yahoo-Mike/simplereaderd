@@ -67,8 +67,6 @@ int registerUpdateHandler(void) {
             if (!bodyPtr)    return err("invalid_request","parsing failed");
             const auto& body = *bodyPtr;
 
-prettyJSON(body,"YM_DEBUG");
-
             if (!body.isMember("table") || !body["table"].isString()) 
                 return err("invalid_request","no tablename");
 
