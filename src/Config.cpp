@@ -65,8 +65,30 @@ void Config::load(const std::string& overridePath) {
     }
 
     auto cfg = loadConfig(path);
-    host_ = cfg["host"];
-    port_ = std::stoi(cfg["port"]);
-    compat_ = cfg["compat"];
-    maxFileSizeMB_ = std::stoi(cfg["maxfilesize"]);
+    auto assignStr = [&](const char* key, std::string& out) {
+        auto it = cfg.find(key);
+        if ( it != cfg.end() && !it->second.empty())
+            out = it->second; // only assign if present and non-empty
+    };
+
+    auto assignInt = [&](const char* key, int& out, auto validate) {
+        auto it = cfg.find(key);
+        if (it != cfg.end()) {
+            try {
+                size_t pos = 0;
+                int v = std::stoi(it->second, &pos, 10);
+                if (pos == it->second.size() && validate(v)) {
+                    out = v; // only assign if fully parsed and in range
+                }
+            } catch (...) {
+                // keep default
+            }
+        }
+    };
+
+    assignStr("host",           host_);
+    assignStr("compat",         compat_);
+    assignInt("port",           port_,          [](int v){ return v > 0 && v <= 65535; });
+    assignInt("maxfilesize",    maxFileSizeMB_, [](int v){ return v > 0; });
+    assignInt("tokentimeout",   tokenTimeout_,  [](int v){ return v > 0; });
 }

@@ -16,6 +16,7 @@ public:
     const std::string& compat() const { return compat_; }
     int maxFileSize() const   { return maxFileSizeMB_ * 1024 * 1024; } // returns in bytes
     int maxFileSizeMB() const { return maxFileSizeMB_; }               // returns in MB
+    int tokenTimeout() const  { return tokenTimeout_; }                // returns in mins
 
 private:
     // Private constructor
@@ -29,5 +30,6 @@ private:
     std::string host_ = "127.0.0.1";
     int port_ = 9000;
     std::string compat_ = "0.0.0";
-    int maxFileSizeMB_ = 200;
+    int maxFileSizeMB_ = 200;   // MB
+    int tokenTimeout_ = 60;     // mins
 };

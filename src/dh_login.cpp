@@ -34,8 +34,6 @@ struct Session {
 static std::unordered_map<std::string, Session> g_sessions;
 static std::mutex g_sessionsMutex;
 
-const int tokenLife = 60 * 60 ;     // how long a token is valid (in seconds)  (360=1hr)
-
 // the magic lives here
 static std::string makeToken(size_t bytes = 32) {
     std::random_device rd;
@@ -153,6 +151,7 @@ int registerLoginHandler(void) {
             }
             // Issue session token
             const auto token = makeToken(32);
+            const auto tokenLife = Config::get().tokenTimeout() * 60; // in secs
             const auto expires = Clock::now() + std::chrono::seconds(tokenLife);
 
             {
