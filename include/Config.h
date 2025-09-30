@@ -19,8 +19,8 @@ public:
     int tokenTimeout() const  { return tokenTimeout_; }                // returns in mins
 
     // string
-    const std::string toString() const;
-    const std::string toShortString() const;    // just compat,maxfilesize,tokentimeout
+    std::string toString() const;
+    std::string toShortString() const;    // just compat,maxfilesize,tokentimeout
 
 private:
     // Private constructor

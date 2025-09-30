@@ -95,7 +95,7 @@ void Config::load(const std::string& overridePath) {
     assignInt("tokentimeout",   tokenTimeout_,  [](int v){ return v > 0; });
 }
 
-const std::string Config::toShortString() const {
+std::string Config::toShortString() const {
     std::ostringstream oss;
 
     oss << "compat=" << compat_ << ", "
@@ -105,7 +105,7 @@ const std::string Config::toShortString() const {
     return oss.str();
 }
 
-const std::string Config::toString() const {
+std::string Config::toString() const {
     std::ostringstream oss;
 
     oss << "v" << SIMPLEREADERD_VERSION << " on "
