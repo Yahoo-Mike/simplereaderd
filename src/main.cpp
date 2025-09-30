@@ -18,7 +18,6 @@
 #include "dh_delete.h"
 #include "dh_ruOK.h"
 #include "utils.h"
-#include "version.h"
 
 void handleSignal(int sig) {
     syslog(LOG_ERR, "simplereaderd terminated by signal %d", sig);
@@ -42,11 +41,7 @@ int main() {
         //
         Config::get().load(); // load singleton Config
 
-        std::string msg = std::string("simplereaderd v") + SIMPLEREADERD_VERSION + " starting on " + Config::get().host() + ":" +
-                   std::to_string(Config::get().port()) + " (compat=" + Config::get().compat() +
-                   ", maxFileSize=" + std::to_string(Config::get().maxFileSizeMB()) + "MB)";
-        
-        std::cout << msg << std::endl;
+        std::string msg = std::string("starting simplereaderd ") + Config::get().toString();
         syslog(LOG_INFO,"%s",msg.c_str());
 
         ////////////////////////////////////////////////////////////////////////

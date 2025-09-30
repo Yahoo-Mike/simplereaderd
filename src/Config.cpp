@@ -1,9 +1,11 @@
 
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
 #include "Config.h"
+#include "version.h"
 
 // loads simplereader.conf file into a map <key, value>
 static std::unordered_map<std::string, std::string> loadConfig(const std::string &path) {
@@ -91,4 +93,24 @@ void Config::load(const std::string& overridePath) {
     assignInt("port",           port_,          [](int v){ return v > 0 && v <= 65535; });
     assignInt("maxfilesize",    maxFileSizeMB_, [](int v){ return v > 0; });
     assignInt("tokentimeout",   tokenTimeout_,  [](int v){ return v > 0; });
+}
+
+const std::string Config::toShortString() const {
+    std::ostringstream oss;
+
+    oss << "compat=" << compat_ << ", "
+        << "maxFileSize=" << maxFileSizeMB_ << "MB, "
+        << "tokenTimeout=" << tokenTimeout_ << "mins";
+
+    return oss.str();
+}
+
+const std::string Config::toString() const {
+    std::ostringstream oss;
+
+    oss << "v" << SIMPLEREADERD_VERSION << " on "
+        << host_ << ":" << port_ << " ("
+        << toShortString() << ")";
+
+        return oss.str();
 }

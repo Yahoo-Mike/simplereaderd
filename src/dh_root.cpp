@@ -3,6 +3,7 @@
 //****************************************
 
 #include <drogon/drogon.h>
+#include "version.h"
 
 int registerRootHandler(void) {
 
@@ -13,6 +14,7 @@ int registerRootHandler(void) {
             Json::Value j;
             j["ok"]  = true;            // use boolean true
             j["status"] = "server up";
+            j["version"] = SIMPLEREADERD_VERSION;
             auto r = drogon::HttpResponse::newHttpJsonResponse(j);
             r->setStatusCode(drogon::k200OK);
             cb(r);

@@ -18,6 +18,10 @@ public:
     int maxFileSizeMB() const { return maxFileSizeMB_; }               // returns in MB
     int tokenTimeout() const  { return tokenTimeout_; }                // returns in mins
 
+    // string
+    const std::string toString() const;
+    const std::string toShortString() const;    // just compat,maxfilesize,tokentimeout
+
 private:
     // Private constructor
     Config() = default;
@@ -33,3 +37,7 @@ private:
     int maxFileSizeMB_ = 200;   // MB
     int tokenTimeout_ = 60;     // mins
 };
+
+inline std::ostream& operator<<(std::ostream& os, const Config& c) {
+    return os << c.toString();
+}
