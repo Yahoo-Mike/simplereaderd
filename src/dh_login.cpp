@@ -121,7 +121,7 @@ int registerLoginHandler(void) {
             const auto username = (*json)["username"].asString();
             const auto password = (*json)["password"].asString();
             const auto version  = (*json)["version"].asString();
-            const auto device  = (*json)["device"].asString();      // "device" tag is optional
+            const auto device  = json->get("device","unidentified").asString();      // "device" tag is optional
 
             if (username.empty() || password.empty() || version.empty()) {
                 return jsonError(req, std::move(cb), drogon::k400BadRequest, "missing_fields");
@@ -130,6 +130,9 @@ int registerLoginHandler(void) {
             // Version gate
             const auto compat = Config::get().compat();
             if (version != compat) {
+                syslog(SYSLOG_ERR, "invalid version [%s]: login rejected for user [%s] on device [%s], not the supported version [%s]",
+                        version.c_str(), username.c_str(), device.c_str(), compat.c_str());
+
                 Json::Value j;
                 j["ok"] = false;
                 j["error"] = "wrong_version";
@@ -141,14 +144,12 @@ int registerLoginHandler(void) {
 
             // Auth check (stub)
             if (!verifyPassword(username, password)) {
+                syslog(SYSLOG_ERR, "invalid username/password for user [%s] on device [%s]", username.c_str(),device.c_str());
                 return jsonError(req, std::move(cb), drogon::k401Unauthorized, "invalid_credentials");
             }
 
-            if (device.empty()) {
-                syslog(SYSLOG_INFO, "user [%s] logged in on unidentified device", username.c_str());
-            } else {
-                syslog(SYSLOG_INFO, "user [%s] logged in on device [%s]", username.c_str(), device.c_str());
-            }
+            syslog(SYSLOG_INFO, "user [%s] logged in on device [%s]", username.c_str(), device.c_str());
+
             // Issue session token
             const auto token = makeToken(32);
             const auto tokenLife = Config::get().tokenTimeout() * 60; // in secs
