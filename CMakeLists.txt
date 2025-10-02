@@ -15,3 +15,7 @@ add_executable(simplereaderd ${SRC_FILES})
 # Add include/ folder for headers
 target_include_directories(simplereaderd PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(simplereaderd PRIVATE Drogon::Drogon SQLite::SQLite3 sodium)
+
+# build the add_user tool (to add a user to database)
+add_executable(add_user tools/add_user.c)
+target_link_libraries(add_user PRIVATE SQLite::SQLite3 sodium)
