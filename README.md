@@ -105,10 +105,8 @@ sudo systemctl start simplereaderd
 sudo systemctl status simplereaderd
 ```
 ## tool:  add_user
-To help you add a user into the database, the tool *add_user* is also packaged.  To build it:
-```
-gcc add_user.c -o add_user -lsqlite3 -lsodium
-```
+To help you add a user into the database, the tool *add_user* is also packaged.  The executable is built in build/add_user.
+
 To run it: ```sudo add_user username password```
 ## License
-SimpleReader is available under the Creative Commons license. See the [LICENSE](https://github.com/simplereaderd/License.md) file.
+SimpleReader is available under the Creative Commons license. See the [LICENSE](https://github.com/Yahoo-Mike/simplereaderd/blob/main/LICENSE) file.
