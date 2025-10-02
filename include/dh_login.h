@@ -5,8 +5,5 @@
 #include <drogon/drogon.h>
 
 int registerLoginHandler(void);
-std::string usernameIfValid(std::string token);
-
-std::string bearerToken(const drogon::HttpRequestPtr& req);
 
 #endif

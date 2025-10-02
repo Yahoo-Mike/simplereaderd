@@ -11,6 +11,7 @@
 
 #include "Database.h"
 #include "Config.h"
+#include "SessionManager.h"
 #include "utils.h"
 #include "dhutils.h"
 #include "dh_login.h"
@@ -73,8 +74,7 @@ int registerUploadBookHandler(void) {
             };
 
             // check whether token is valid
-            const std::string token    = bearerToken(req);
-            const std::string username = usernameIfValid(token);  // empty if invalid/expired
+            const std::string username = SessionManager::instance().usernameIfValid(req);  // empty if invalid/expired
             if (username.empty()) 
                 return httpErr(drogon::k401Unauthorized, "unauthorised");
 

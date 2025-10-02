@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "dhutils.h"
 #include "dh_login.h"
+#include "SessionManager.h"
 
 using drogon::HttpRequestPtr;
 using drogon::HttpResponsePtr;
@@ -37,8 +38,7 @@ int registerCheckHandler(void) {
             };
 
             // check whether token is valid
-            const std::string token    = bearerToken(req);
-            const std::string username = usernameIfValid(token);  // empty if invalid/expired
+            const std::string username = SessionManager::instance().usernameIfValid(req);  // empty if invalid/expired
             if (username.empty()) return err("unauthorised");
 
             // parse and validate json

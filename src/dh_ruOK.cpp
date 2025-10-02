@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "dhutils.h"
 #include "dh_login.h"
+#include "SessionManager.h"
 
 using drogon::HttpRequestPtr;
 using drogon::HttpResponsePtr;
@@ -17,7 +18,7 @@ int registerRUOKHandler(void) {
         [](const HttpRequestPtr& req, std::function<void (const HttpResponsePtr &)> &&cb,const std::string& token) {
             Json::Value j;
 
-            if (usernameIfValid(token).empty()) {
+            if (SessionManager::instance().usernameIfValid(token).empty()) {
                 j["ok"] = false;
                 auto r = drogon::HttpResponse::newHttpJsonResponse(j);
                 r->setStatusCode(drogon::k401Unauthorized);

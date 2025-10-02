@@ -1,12 +1,4 @@
-#include <string>
-#include <drogon/drogon.h>
-
-std::string bearerToken(const drogon::HttpRequestPtr& req) {
-  auto h = req->getHeader("authorization");
-  if (h.size() >= 7 && strncasecmp(h.c_str(), "Bearer ", 7) == 0) 
-    return h.substr(7);
-  return "";
-}
+#include "dhutils.h"
 
 // Accept integer in JSON either as number or stringified digits
 bool parseItemId(const Json::Value& v, long long& out) {

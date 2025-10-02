@@ -3,9 +3,6 @@
 //*******************************************
 #include <unordered_map>
 #include <mutex>
-#include <chrono>
-#include <random>
-#include <iomanip>
 #include <sstream>
 #include <syslog.h>
 
@@ -16,36 +13,11 @@
 #include "Config.h"
 #include "Database.h"
 #include "utils.h"
+#include "SessionManager.h"
 
 using drogon::HttpRequestPtr;
 using drogon::HttpResponsePtr;
 using drogon::HttpStatusCode;
-
-using Clock = std::chrono::system_clock;
-
-// we store an in-memory map of all the valid session tokens
-// note: we don't delete expired tokens, they just stay in memory until daemon dies/restarts
-struct Session {
-    std::string username;
-    std::string device;
-    std::chrono::time_point<Clock> expires;
-};
-
-static std::unordered_map<std::string, Session> g_sessions;
-static std::mutex g_sessionsMutex;
-
-// the magic lives here
-static std::string makeToken(size_t bytes = 32) {
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<unsigned int> dist(0, 255);
-    std::ostringstream oss;
-    for (size_t i = 0; i < bytes; ++i) {
-        unsigned int b = dist(gen) & 0xFFu;
-        oss << std::hex << std::setfill('0') << std::setw(2) << b;
-    }
-    return oss.str();
-}
 
 // check username/password
 static bool verifyPassword(const std::string& username, const std::string& password) {
@@ -81,27 +53,6 @@ static void jsonError(const HttpRequestPtr&,
     cb(resp);
 }
 
-// check if this "token" is valid.  If so return username.  If not return empty.
-std::string usernameIfValid(std::string token) {
-    if (token.empty()) return "";
-
-    std::lock_guard<std::mutex> lock(g_sessionsMutex);
-    const auto it = g_sessions.find(token);
-    if (it == g_sessions.end()) 
-        return "";
-
-    if (it->second.expires <= Clock::now())
-        // no lazy cleanup by design; just treat as invalid (will be cleared when daemon stops/restarts)
-        return "";
-
-    return it->second.username;
-}
-
-// check if this "token" is valid
-bool isValid(const std::string& token) {
-  return !usernameIfValid(token).empty();
-}
-
 int registerLoginHandler(void) {
 
     drogon::app().registerHandler(
@@ -127,7 +78,7 @@ int registerLoginHandler(void) {
                 return jsonError(req, std::move(cb), drogon::k400BadRequest, "missing_fields");
             }
 
-            // Version gate
+            // check that we support this client's version#
             const auto compat = Config::get().compat();
             if (version != compat) {
                 syslog(SYSLOG_ERR, "invalid version [%s]: login rejected for user [%s] on device [%s], not the supported version [%s]",
@@ -151,20 +102,13 @@ int registerLoginHandler(void) {
             syslog(SYSLOG_INFO, "user [%s] logged in on device [%s]", username.c_str(), device.c_str());
 
             // Issue session token
-            const auto token = makeToken(32);
-            const auto tokenLife = Config::get().tokenTimeout() * 60; // in secs
-            const auto expires = Clock::now() + std::chrono::seconds(tokenLife);
-
-            {
-                std::lock_guard<std::mutex> lk(g_sessionsMutex);
-                g_sessions[token] = Session{username, device, expires};
-            }
+            const auto session = SessionManager::instance().add(username,device);
 
             Json::Value j;
             j["ok"] = true;
-            j["token"] = token;
+            j["token"] = session.token;
             j["expiresAt"] = static_cast<Json::Int64>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(expires.time_since_epoch()).count()
+                std::chrono::duration_cast<std::chrono::milliseconds>(session.expiry.time_since_epoch()).count()
             );
             auto resp = drogon::HttpResponse::newHttpJsonResponse(j);
             resp->setStatusCode(drogon::k200OK);
