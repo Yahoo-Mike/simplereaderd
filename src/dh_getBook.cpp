@@ -50,7 +50,9 @@ int registerGetBookHandler(void) {
                 return jsonErr(drogon::k404NotFound, "file not found");
             }
             auto actualSize = fs::file_size(path, ec);
-            if (ec || (size >= 0 && static_cast<long long>(actualSize) != size)) {
+            if (ec)
+                return jsonErr(drogon::k500InternalServerError, ec.message().c_str());
+            if ( (size >= 0) && (static_cast<long long>(actualSize) != size) ) {
                 // size mismatch: treat as server error (index corrupt)
                 return jsonErr(drogon::k500InternalServerError, "size mismatch");
             }        
@@ -64,7 +66,6 @@ int registerGetBookHandler(void) {
             resp->setStatusCode(drogon::k200OK);
             resp->addHeader("X-Checksum-SHA256", sha256);
             resp->addHeader("X-Filename", clientFileName);
-            resp->addHeader("Content-Length", std::to_string(actualSize));
             cb(resp);
         },
         {drogon::Get}  // limit to GET
