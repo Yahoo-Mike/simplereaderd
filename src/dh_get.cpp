@@ -65,6 +65,8 @@ int registerGetHandler(void) {
                     db.listUserBookmarks(username, fileId, id, rows);         // [0..n]
                 } else if (table == "highlight") {
                     db.listUserHighlights(username, fileId, id, rows);        // [0..n]
+                } else if (table == "note") {
+                    db.listUserNotes(username, fileId, id, rows);        // [0..n]
                 } else {
                     return err("invalid_request","unknown table");
                 }

@@ -68,6 +68,8 @@ int registerGetSinceHandler(void) {
                     db.listUserBookmarksSince(username, since, limit, rows, nextSinceOut);
                 } else if (table == "highlight") {
                     db.listUserHighlightsSince(username, since, limit, rows, nextSinceOut);
+                } else if (table == "note") {
+                    db.listUserNotesSince(username, since, limit, rows, nextSinceOut);
                 } else {
                     return err("invalid_request","unknown tablename");
                 }

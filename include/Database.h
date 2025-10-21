@@ -45,12 +45,17 @@ class Database {
         // Highlights: append rows: {fileId, id, selection, label, colour, updatedAt, deleted}
         void listUserHighlights(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut);
 
+        // Notes: append rows: {fileId, id, locator, content, updatedAt, deleted}
+        void listUserNotes(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut);
+
         // for /getSince
         void listUserBooksSince(const std::string& username, long long since, int limit,
                                 Json::Value& rowsOut, long long& nextSinceOut);
         void listUserBookmarksSince(const std::string& username, long long since, int limit,
                                     Json::Value& rowsOut, long long& nextSinceOut);
         void listUserHighlightsSince(const std::string& username, long long since, int limit,
+                                    Json::Value& rowsOut, long long& nextSinceOut);
+        void listUserNotesSince(const std::string& username, long long since, int limit,
                                     Json::Value& rowsOut, long long& nextSinceOut);
                                     
         // for /update
@@ -65,13 +70,19 @@ class Database {
                                 const std::string& selection, const std::string& label, const std::string& colour,
                                 bool resurrect, long long nowMs);
 
+        void insertUserNote(const std::string& user, const std::string& fileId, long long id,
+                                const std::string& locator, const std::string& content,
+                                bool resurrect, long long nowMs);
+
         // for /delete
         // Database.h
         void softDeleteUserBook(const std::string& user, const std::string& fileId, long long nowMs);
         void softDeleteUserBookmark(const std::string& user, const std::string& fileId, long long id, long long nowMs);
         void softDeleteUserHighlight(const std::string& user, const std::string& fileId, long long id, long long nowMs);
+        void softDeleteUserNote(const std::string& user, const std::string& fileId, long long id, long long nowMs);
         void softDeleteUserBookmarkAll(const std::string& user, const std::string& fileId, long long nowMs);
         void softDeleteUserHighlightAll(const std::string& user, const std::string& fileId, long long nowMs);
+        void softDeleteUserNoteAll(const std::string& user, const std::string& fileId, long long nowMs);
 
         // for GET /book
         std::string getBookForDownload(const std::string& fileId, std::string& locationOut,

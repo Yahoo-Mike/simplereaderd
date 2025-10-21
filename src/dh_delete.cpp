@@ -73,6 +73,7 @@ int registerDeleteHandler(void) {
                     // also soft delete bookmarks and highlights for this fileId
                     db.softDeleteUserBookmarkAll(username,fileId,tnow);
                     db.softDeleteUserHighlightAll(username,fileId,tnow);
+                    db.softDeleteUserNoteAll(username,fileId,tnow);
                     return ok(tnow);
                 }
 
@@ -110,6 +111,24 @@ int registerDeleteHandler(void) {
 
                     const long long tnow = nowMs();
                     db.softDeleteUserHighlight(username, fileId, itemId, tnow);
+                    return ok(tnow);
+                }
+
+                if (table == "note") {
+                    if (!hasId)
+                        return err("invalid_request","no id");
+                    long long itemId = 0;
+                    if (!parseItemId(body["id"], itemId))
+                        return err("invalid_request","bad id");
+
+                    auto st = db.select_byUserFileAndItemId("user_notes", username, fileId, itemId);
+                    if (!st.exists && !st.deleted)
+                        return err("not_found");
+
+                    if (st.deleted) return ok(st.deletedAt);
+
+                    const long long tnow = nowMs();
+                    db.softDeleteUserNote(username, fileId, itemId, tnow);
                     return ok(tnow);
                 }
 

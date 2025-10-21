@@ -167,6 +167,34 @@ int registerUpdateHandler(void) {
                     return ok(tnow);
                 }
 
+                if (table == "note") {
+                    if (!row.isMember("fileId") || !row["fileId"].isString())
+                        return err("invalid_request","no fileId");
+                    if (!row.isMember("id"))
+                        return err("invalid_request","no id");
+
+                    const std::string fileId = row["fileId"].asString();
+                    if (!db.bookExists(fileId))
+                        return err("invalid_request","unknown fileId");
+
+                    long long itemId = 0;
+                    if (!parseItemId(row["id"], itemId))
+                        return err("invalid_request", "bad id");
+                    const std::string locator = row.isMember("locator") ? toJsonString(row["locator"]) : "";
+                    const std::string content   = row.isMember("content")   ? row["content"].asString()      : "";
+
+                    auto st = db.select_byUserFileAndItemId("user_notes", username, fileId, itemId);
+                    const long long serverTs = st.deleted ? st.deletedAt : st.updatedAt;
+
+                    if ( !force && (serverTs > 0) && (clientTs < serverTs) )
+                        return conflict(serverTs);
+
+                    const long long tnow = nowMs();
+                    // NOTE: always clear tombstone on update, thereby resurrecting the whole record
+                    db.insertUserNote(username, fileId, itemId, locator, content, true, tnow);
+                    return ok(tnow);
+                }
+
                 return err("invalid_request","unknown table");
             } catch (...) {
                 return err("server_error");

@@ -13,6 +13,14 @@
 using drogon::HttpRequestPtr;
 using drogon::HttpResponsePtr;
 
+
+static std::string resolveTable(std::string s) {
+    if (s == "highlight") return "user_highlights";
+    if (s == "bookmark")  return "user_bookmarks";
+    if (s == "note")      return "user_notes";
+    return "";
+}
+
 int registerCheckHandler(void) {
     drogon::app().registerHandler("/check",
         [](const HttpRequestPtr& req, std::function<void (const HttpResponsePtr &)> &&cb) {
@@ -69,7 +77,7 @@ int registerCheckHandler(void) {
 
                     st = db.select_userBooks_byUserAndFileId(username, body["fileId"].asString());
                 }
-                else if (table == "bookmark" || table == "highlight") {
+                else if (table == "bookmark" || table == "highlight" || table == "note") {
                     // Require fileId (string) and id (integer)
                     // "id" is a sequential unique index
                     if (!body.isMember("fileId") || !body["fileId"].isString()) 
@@ -82,8 +90,7 @@ int registerCheckHandler(void) {
                         return err("invalid_request","bad id");
 
                     const std::string fileId = body["fileId"].asString();
-                    const std::string tablename =
-                        (table.find("highlight") != std::string::npos) ? "user_highlights" : "user_bookmarks";
+                    const std::string tablename = resolveTable(table);
 
                     st = db.select_byUserFileAndItemId(tablename, username, fileId, itemId);
                 }

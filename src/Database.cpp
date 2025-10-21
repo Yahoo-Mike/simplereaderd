@@ -41,6 +41,9 @@ void Database::close(void) {
 // users: a list of all users
 // books: a library of all books
 // user_books: a list of a user's books
+// user_highlights: a list of a user's highlights for a book
+// user_bookmarks: a list of a user's bookmarks for a book
+// user_notes: a list of a user's notes for a book
 //
 //****************************************************************
 static void execOrThrow(sqlite3* db, const char* sql) {
@@ -232,6 +235,47 @@ void Database::initSchema(void) {
             );
             CREATE INDEX IF NOT EXISTS idx_user_bookmarks_user_updated ON user_bookmarks (username, updated_at);
             CREATE INDEX IF NOT EXISTS idx_user_bookmarks_user_deleted ON user_bookmarks (username, deleted_at);
+        )SQL");
+
+        //
+        //****************************************************************
+        //  user_notes: list of all notes that a username has ever had (including deleted ones)
+        //
+        // CREATE TABLE IF NOT EXISTS user_notes (
+        //   username    TEXT NOT NULL,
+        //   file_id     TEXT NOT NULL,                 -- -> books.file_id
+        //   id          INTEGER NOT NULL,              -- unique sequential index for note
+        //   locator     TEXT NOT NULL,                 -- JSON-serialized position (string)
+        //   content     TEXT NOT NULL,                 -- text of the note
+        //   updated_at  INTEGER NOT NULL,              -- epoch millis (UTC)
+        //   deleted_at  INTEGER,                       -- NULL = active; non-NULL = tombstone
+        //
+        //   PRIMARY KEY (username, file_id, id),
+        //
+        //   FOREIGN KEY (username)
+        //     REFERENCES users(username)
+        //     ON DELETE CASCADE
+        //     ON UPDATE NO ACTION,
+        //
+        //   FOREIGN KEY (file_id)
+        //     REFERENCES books(file_id)
+        //     ON DELETE RESTRICT
+        //     ON UPDATE NO ACTION );
+        execOrThrow(db_, R"SQL(
+            CREATE TABLE IF NOT EXISTS user_notes (
+                username    TEXT NOT NULL,
+                file_id     TEXT NOT NULL,
+                id          INTEGER NOT NULL,
+                locator     TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                updated_at  INTEGER NOT NULL,
+                deleted_at  INTEGER,
+                PRIMARY KEY (username, file_id, id),
+                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE ON UPDATE NO ACTION,
+                FOREIGN KEY (file_id) REFERENCES books(file_id) ON DELETE RESTRICT ON UPDATE NO ACTION
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_notes_user_updated ON user_notes (username, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_user_notes_user_deleted ON user_notes (username, deleted_at);
         )SQL");
 
         execOrThrow(db_, "COMMIT;");
@@ -482,6 +526,52 @@ void Database::listUserHighlights(const std::string& username, const std::string
     sqlite3_finalize(stmt);
 }
 
+void Database::listUserNotes(const std::string& username, const std::string& fileId, const int& id, Json::Value& rowsOut) {
+    static const char* SQL_ALL = "SELECT id, locator, content, updated_at, deleted_at "
+                                 "FROM user_notes WHERE username=?1 AND file_id=?2 ORDER BY id ASC";
+    static const char* SQL_ONE = "SELECT id, locator, content, updated_at, deleted_at "
+                                 "FROM user_notes WHERE username=?1 AND file_id=?2 AND id=?3";
+
+    const char* SQL = (id<0) ? SQL_ALL : SQL_ONE;
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (listUserHighlights)");
+
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, fileId.c_str(),   -1, SQLITE_TRANSIENT);
+    if (id >= 0)
+        sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(id));
+
+    for (;;) {
+        const int rc = sqlite3_step(stmt);
+        if (rc == SQLITE_DONE) break;
+        if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserNotes() rc=%d %s", rc, sqlite3_errmsg(db_));
+            sqlite3_finalize(stmt);
+            throw std::runtime_error(std::string("sqlite step failed (listUserNotes): ") + sqlite3_errmsg(db_));
+        }
+
+        Json::Value row(Json::objectValue);
+        row["id"]        = static_cast<Json::Int64>(sqlite3_column_int64(stmt, 0));
+        const char* loc  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* txt  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const long long upd = sqlite3_column_int64(stmt, 3);
+        const bool hasDel = (sqlite3_column_type(stmt, 4) != SQLITE_NULL);
+        const long long del = hasDel ? sqlite3_column_int64(stmt, 4) : 0;
+
+        row["location"] = loc ? loc : "";
+        if (txt) row["content"]   = txt;
+        row["updatedAt"] = static_cast<Json::Int64>(upd);
+        if (del != 0)
+            row["deletedAt"]   = static_cast<Json::Int64>(del);
+
+        rowsOut.append(row);
+    }
+
+    sqlite3_finalize(stmt);
+}
+
 /////////////////////////////////////////////////////////////
 // POST /getSince
 //
@@ -673,6 +763,64 @@ void Database::listUserHighlightsSince(const std::string& username, long long si
     computePagingNextSince(since, tsSeen, count > limit, nextSinceOut);
 }
 
+void Database::listUserNotesSince(const std::string& username, long long since, int limit,
+                                      Json::Value& rowsOut, long long& nextSinceOut) {
+    const int fetch = limit + 1;
+    static const char* SQL =
+        "SELECT file_id, id, locator, content, updated_at, deleted_at, "
+        "       COALESCE(deleted_at, updated_at) AS ts "
+        "FROM user_notes "
+        "WHERE username = ?1 AND COALESCE(deleted_at, updated_at) >= ?2 "
+        "ORDER BY ts ASC, file_id ASC, id ASC "
+        "LIMIT ?3";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (listUserNotesSince)");
+    sqlite3_bind_text (stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(since));
+    sqlite3_bind_int  (stmt, 3, fetch);
+
+    std::vector<long long> tsSeen;
+    int count = 0;
+    for (;;) {
+        int rc = sqlite3_step(stmt);
+        if (rc == SQLITE_DONE) break;
+        if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listUserNotesSince() rc=%d %s", rc, sqlite3_errmsg(db_));
+            sqlite3_finalize(stmt);
+            throw std::runtime_error(std::string("sqlite step failed (scanUserNotesSince): ")
+                                     + sqlite3_errmsg(db_));
+        }
+
+        const char* fileId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        long long id       = sqlite3_column_int64(stmt, 1);
+        const char* loc    = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* txt    = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        const long long upd = sqlite3_column_int64(stmt, 4);
+        const bool hasDel   = (sqlite3_column_type(stmt, 5) != SQLITE_NULL);
+        const long long del = hasDel ? sqlite3_column_int64(stmt, 5) : 0;
+        const long long ts  = sqlite3_column_int64(stmt, 6);
+
+        tsSeen.push_back(ts);
+        if (count < limit) {
+            Json::Value row(Json::objectValue);
+            row["fileId"]    = fileId ? fileId : "";
+            row["id"]        = static_cast<Json::Int64>(id);
+            row["locator"]   = loc ? loc : "";
+            if (txt) row["content"] = txt;
+            row["updatedAt"] = static_cast<Json::Int64>(ts);
+            if (hasDel)
+                row["deletedAt"] = static_cast<Json::Int64>(del);
+            rowsOut.append(row);
+        }
+        ++count;
+    }
+    sqlite3_finalize(stmt);
+
+    computePagingNextSince(since, tsSeen, count > limit, nextSinceOut);
+}
+
 /////////////////////////////////////////////////////////////
 // POST /update
 //     note: in these insertUser*() funcs, set deleted_at = NULL when resurrect==true
@@ -780,6 +928,41 @@ void Database::insertUserHighlight(const std::string& username, const std::strin
     sqlite3_finalize(stmt);
 }
 
+void Database::insertUserNote(const std::string& username, const std::string& fileId, long long id,
+                                  const std::string& locator, const std::string& content,
+                                  bool resurrect, long long tnow) {
+    static const char* SQL = R"SQL(
+        INSERT INTO user_notes (username, file_id, id, locator, content, updated_at, deleted_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
+        ON CONFLICT(username, file_id, id) DO UPDATE SET
+            locator    = excluded.locator,
+            content    = excluded.content,
+            updated_at = excluded.updated_at,
+            deleted_at = CASE WHEN ?7 THEN NULL ELSE user_notes.deleted_at END
+    )SQL";
+    sqlite3_stmt* stmt=nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (insertUserNote)");
+    sqlite3_bind_text (stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (stmt, 2, fileId.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(id));
+    sqlite3_bind_text (stmt, 4, locator.c_str(),  -1, SQLITE_TRANSIENT);
+    if (!content.empty())
+        sqlite3_bind_text(stmt, 5, content.c_str(), -1, SQLITE_TRANSIENT);
+    else
+        sqlite3_bind_null(stmt, 5);
+    sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(tnow));
+    sqlite3_bind_int (stmt, 7, resurrect ? 1 : 0);
+
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"insertUserNote() rc=%d %s", rc, sqlite3_errmsg(db_));
+        sqlite3_finalize(stmt);
+        throw std::runtime_error(std::string("sqlite step failed (insertUserNote): ") + sqlite3_errmsg(db_));
+    }
+    sqlite3_finalize(stmt);
+}
+
 /////////////////////////////////////////////////////////////
 // POST /delete
 void Database::softDeleteUserBook(const std::string& user, const std::string& fileId, long long tm) {
@@ -839,6 +1022,26 @@ void Database::softDeleteUserHighlight(const std::string& user, const std::strin
     }
     sqlite3_finalize(s);
 }
+
+void Database::softDeleteUserNote(const std::string& user, const std::string& fileId, long long id, long long tnow) {
+    static const char* SQL =
+        "UPDATE user_notes SET deleted_at=?4, updated_at=?4 WHERE username=?1 AND file_id=?2 AND id=?3";
+    sqlite3_stmt* s=nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (softDeleteUserNote)");
+    sqlite3_bind_text (s, 1, user.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (s, 2, fileId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(id));
+    sqlite3_bind_int64(s, 4, static_cast<sqlite3_int64>(tnow));
+    int rc = sqlite3_step(s);
+    if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteUserNote() rc=%d %s", rc, sqlite3_errmsg(db_));
+        sqlite3_finalize(s);
+        throw std::runtime_error(std::string("sqlite step failed (softDeleteUserNote): ") + sqlite3_errmsg(db_));
+    }
+    sqlite3_finalize(s);
+}
+
 void Database::softDeleteUserBookmarkAll(const std::string& user, const std::string& fileId, long long tnow) {
     static const char* SQL =
         "UPDATE user_bookmarks SET deleted_at=?3, updated_at=?3 WHERE username=?1 AND file_id=?2";
@@ -850,7 +1053,7 @@ void Database::softDeleteUserBookmarkAll(const std::string& user, const std::str
     sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
-        syslog(SYSLOG_ERR,"softDeleteuserHighlight() rc=%d %s", rc, sqlite3_errmsg(db_));
+        syslog(SYSLOG_ERR,"softDeleteUserBookmarkAll() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserBookmarkAll): ") + sqlite3_errmsg(db_));
     }
@@ -868,12 +1071,31 @@ void Database::softDeleteUserHighlightAll(const std::string& user, const std::st
     sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
     int rc = sqlite3_step(s);
     if (rc != SQLITE_DONE) {
-        syslog(SYSLOG_ERR,"softDeleteuserHighlightAll() rc=%d %s", rc, sqlite3_errmsg(db_));
+        syslog(SYSLOG_ERR,"softDeleteUserHighlightAll() rc=%d %s", rc, sqlite3_errmsg(db_));
         sqlite3_finalize(s);
         throw std::runtime_error(std::string("sqlite step failed (softDeleteUserHighlightAll): ") + sqlite3_errmsg(db_));
     }
     sqlite3_finalize(s);
 }
+
+void Database::softDeleteUserNoteAll(const std::string& user, const std::string& fileId, long long tnow) {
+    static const char* SQL =
+        "UPDATE user_notes SET deleted_at=?3, updated_at=?3 WHERE username=?1 AND file_id=?2";
+    sqlite3_stmt* s=nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &s, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (softDeleteUserNoteAll)");
+    sqlite3_bind_text (s, 1, user.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (s, 2, fileId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(tnow));
+    int rc = sqlite3_step(s);
+    if (rc != SQLITE_DONE) {
+        syslog(SYSLOG_ERR,"softDeleteuserNote() rc=%d %s", rc, sqlite3_errmsg(db_));
+        sqlite3_finalize(s);
+        throw std::runtime_error(std::string("sqlite step failed (softDeleteUserNoteAll): ") + sqlite3_errmsg(db_));
+    }
+    sqlite3_finalize(s);
+}
+
 
 /////////////////////////////////////////////////////////////
 // GET /book
