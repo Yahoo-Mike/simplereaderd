@@ -560,7 +560,7 @@ void Database::listUserNotes(const std::string& username, const std::string& fil
         const bool hasDel = (sqlite3_column_type(stmt, 4) != SQLITE_NULL);
         const long long del = hasDel ? sqlite3_column_int64(stmt, 4) : 0;
 
-        row["location"] = loc ? loc : "";
+        row["locator"] = loc ? loc : "";
         if (txt) row["content"]   = txt;
         row["updatedAt"] = static_cast<Json::Int64>(upd);
         if (del != 0)
