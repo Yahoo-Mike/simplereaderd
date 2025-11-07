@@ -88,6 +88,10 @@ class Database {
         std::string getBookForDownload(const std::string& fileId, std::string& locationOut,
                                 long long& filesizeOut, std::string& sha256Out);
 
+        // for GET /catalogue
+        // returns: number of rows in "rowsOut"
+        int listAllBooks(Json::Value& rowsOut);
+
         // for /uploadBook
         void insertBookRecord(const std::string& fileId, const std::string& sha256, long long filesize,
                               const std::string& location, const std::string& clientFileName, long long updatedAt);

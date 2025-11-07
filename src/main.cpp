@@ -13,6 +13,7 @@
 #include "dh_get.h"
 #include "dh_getSince.h"
 #include "dh_getBook.h"
+#include "dh_getCatalogue.h"
 #include "dh_uploadBook.h"
 #include "dh_update.h"
 #include "dh_delete.h"
@@ -59,6 +60,7 @@ int main() {
         registerGetHandler();
         registerGetSinceHandler();
         registerGetBookHandler();
+        registerGetCatalogueHandler();
         registerUploadBookHandler();
         registerUpdateHandler();
         registerDeleteHandler();

@@ -1167,3 +1167,41 @@ void Database::insertBookRecord(const std::string& fileId,
     }
     sqlite3_finalize(s);
 }
+
+/////////////////////////////////////////////////////////////
+// GET /catalogue
+// returns: number of book rows in "rowsOut"
+int Database::listAllBooks(Json::Value& rowsOut) {
+    int rowCount = 0;
+
+    static const char* SQL =
+        "SELECT file_id, filename FROM books ORDER BY filename";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("prepare failed (listAllBooks)");
+
+    for (;;) {
+        const int rc = sqlite3_step(stmt);
+        if (rc == SQLITE_DONE) break;
+        if (rc != SQLITE_ROW) {
+            syslog(SYSLOG_ERR,"listAllBooks() rc=%d %s", rc, sqlite3_errmsg(db_));
+            sqlite3_finalize(stmt);
+            throw std::runtime_error(std::string("sqlite step failed (listAllBooks): ") + sqlite3_errmsg(db_));
+        }
+
+        const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+        if (id && *id && name && *name) {
+            Json::Value row(Json::objectValue);
+            row["fileId"]  = id;
+            row["fileName"] = name;
+            rowsOut.append(row);
+            rowCount++;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    return rowCount;
+}
