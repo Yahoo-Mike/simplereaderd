@@ -116,6 +116,7 @@ void Database::initSchema(void) {
         //    username    TEXT NOT NULL,            // primary key
         //    file_id     TEXT NOT NULL,            // primary key
         //    progress    TEXT,                     // client-only:  JSON blob
+        //    bookmark    TEXT,                     // client-only:  JSON blob
         //
         //    updated_at  INTEGER NOT NULL,         // UTC timestamp this record last updated
         //    deleted_at  INTEGER,                  // zero means still active, non-zero is UTC tombstone
@@ -141,6 +142,7 @@ void Database::initSchema(void) {
               username    TEXT NOT NULL,
               file_id     TEXT NOT NULL,
               progress    TEXT,
+              bookmark    TEXT,
               updated_at  INTEGER NOT NULL,
               deleted_at  INTEGER,
               PRIMARY KEY (username, file_id),
@@ -400,7 +402,7 @@ std::string Database::lookupFileIdByHashSize(const std::string& sha256, long lon
 //
 void Database::listUserBook(const std::string& username, const std::string& fileId, Json::Value& rowsOut) {
     static const char* SQL =
-        "SELECT progress, updated_at, deleted_at "
+        "SELECT progress, bookmark, updated_at, deleted_at "
         "FROM user_books WHERE username=?1 AND file_id=?2 LIMIT 1";
 
     sqlite3_stmt* stmt = nullptr;
@@ -413,12 +415,14 @@ void Database::listUserBook(const std::string& username, const std::string& file
     const int rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         const char* prog = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        const long long upd = sqlite3_column_int64(stmt, 1);
-        const bool hasDel   = (sqlite3_column_type(stmt, 2) != SQLITE_NULL);
-        const long long del = hasDel ? sqlite3_column_int64(stmt, 2) : 0;
+        const char* bmrk = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const long long upd = sqlite3_column_int64(stmt, 2);
+        const bool hasDel   = (sqlite3_column_type(stmt, 3) != SQLITE_NULL);
+        const long long del = hasDel ? sqlite3_column_int64(stmt, 3) : 0;
 
         Json::Value row(Json::objectValue);
         row["progress"]  = prog ? prog : "";
+        row["bookmark"]  = bmrk ? bmrk : "";
         row["updatedAt"] = static_cast<Json::Int64>(upd);
         if (del != 0)
             row["deletedAt"]   = static_cast<Json::Int64>(del);
@@ -595,7 +599,7 @@ void Database::listUserBooksSince(const std::string& username, long long since, 
                                   Json::Value& rowsOut, long long& nextSinceOut) {
     const int fetch = limit + 1;
     static const char* SQL =
-        "SELECT file_id, progress, updated_at, deleted_at, "
+        "SELECT file_id, progress, bookmark, updated_at, deleted_at, "
         "       COALESCE(deleted_at, updated_at) AS ts "
         "FROM user_books "
         "WHERE username = ?1 AND COALESCE(deleted_at, updated_at) >= ?2 "
@@ -623,16 +627,18 @@ void Database::listUserBooksSince(const std::string& username, long long since, 
 
         const char* fileId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         const char* prog   = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const long long upd = sqlite3_column_int64(stmt, 2);
-        const bool hasDel   = (sqlite3_column_type(stmt, 3) != SQLITE_NULL);
-        const long long del = hasDel ? sqlite3_column_int64(stmt, 3) : 0;
-        const long long ts  = sqlite3_column_int64(stmt, 4);
+        const char* bmrk   = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const long long upd = sqlite3_column_int64(stmt, 3);
+        const bool hasDel   = (sqlite3_column_type(stmt, 4) != SQLITE_NULL);
+        const long long del = hasDel ? sqlite3_column_int64(stmt, 4) : 0;
+        const long long ts  = sqlite3_column_int64(stmt, 5);
 
         tsSeen.push_back(ts);
         if (count < limit) {
             Json::Value row(Json::objectValue);
             row["fileId"]    = fileId ? fileId : "";
             row["progress"]  = prog ? prog : "";
+            row["bookmark"]  = bmrk ? bmrk : "";
             row["updatedAt"] = static_cast<Json::Int64>(ts);
             if (hasDel)
                 row["deletedAt"] = static_cast<Json::Int64>(del);
@@ -825,24 +831,26 @@ void Database::listUserNotesSince(const std::string& username, long long since, 
 // POST /update
 //     note: in these insertUser*() funcs, set deleted_at = NULL when resurrect==true
 void Database::insertUserBook(const std::string& username, const std::string& fileId,
-                              const std::string& progress, bool resurrect, long long tnow) {
+                              const std::string& progress, const std::string& bookmark, bool resurrect, long long tnow) {
     static const char* SQL = R"SQL(
-        INSERT INTO user_books (username, file_id, progress, updated_at, deleted_at)
-        VALUES (?1, ?2, ?3, ?4, NULL)
+        INSERT INTO user_books (username, file_id, progress, bookmark, updated_at, deleted_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
         ON CONFLICT(username, file_id) DO UPDATE SET
             progress   = excluded.progress,
+            bookmark   = excluded.bookmark,
             updated_at = excluded.updated_at,
-            deleted_at = CASE WHEN ?5 THEN NULL ELSE user_books.deleted_at END
+            deleted_at = CASE WHEN ?6 THEN NULL ELSE user_books.deleted_at END
     )SQL";
 
     sqlite3_stmt* stmt=nullptr;
     if (sqlite3_prepare_v2(db_, SQL, -1, &stmt, nullptr) != SQLITE_OK)
         throw std::runtime_error("prepare failed (insertUserBook)");
-    sqlite3_bind_text (stmt, 1, username.c_str(),    -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (stmt, 1, username.c_str(),-1, SQLITE_TRANSIENT);
     sqlite3_bind_text (stmt, 2, fileId.c_str(),  -1, SQLITE_TRANSIENT);
     sqlite3_bind_text (stmt, 3, progress.c_str(),-1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 4, tnow);
-    sqlite3_bind_int (stmt, 5, resurrect ? 1 : 0);
+    sqlite3_bind_text (stmt, 4, bookmark.c_str(),-1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 5, tnow);
+    sqlite3_bind_int (stmt, 6, resurrect ? 1 : 0);
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         syslog(SYSLOG_ERR,"insertUserBook() rc=%d %s", rc, sqlite3_errmsg(db_));

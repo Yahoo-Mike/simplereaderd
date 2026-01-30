@@ -96,6 +96,7 @@ int registerUpdateHandler(void) {
                         return err("invalid_request","unknown fileId");
 
                     const std::string progress = row.isMember("progress") ? toJsonString(row["progress"]) : "";
+                    const std::string bookmark = row.isMember("bookmark") ? toJsonString(row["bookmark"]) : "";
 
                     auto st = db.select_userBooks_byUserAndFileId(username, fileId);
                     const long long serverTs = st.deleted ? st.deletedAt : st.updatedAt;
@@ -105,7 +106,7 @@ int registerUpdateHandler(void) {
 
                     const long long tnow = nowMs();
                     // NOTE: always clear tombstone on update, thereby resurrecting the whole record
-                    db.insertUserBook(username, fileId, progress, true, tnow);
+                    db.insertUserBook(username, fileId, progress, bookmark, true, tnow);
                     return ok(tnow);
                 }
 

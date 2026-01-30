@@ -2,3 +2,6 @@
 /uploads/
 /*it.sh
 /.vscode/
+/.vs/
+/out/
+/CMakeSettings.json

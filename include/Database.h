@@ -36,7 +36,7 @@ class Database {
         // check for book by sha256+filesize in "books"
         std::string lookupFileIdByHashSize(const std::string& sha256, long long filesize);
 
-        // Books: append 0 or 1 row: {fileId, progress, updatedAt, deleted}
+        // Books: append 0 or 1 row: {fileId, progress, bookmark, updatedAt, deleted}
         void listUserBook(const std::string& username, const std::string& fileId, Json::Value& rowsOut);
 
         // Bookmarks: append rows: {fileId, id, locator, label, updatedAt, deleted}
@@ -60,7 +60,7 @@ class Database {
                                     
         // for /update
         void insertUserBook(const std::string& user, const std::string& fileId,
-                            const std::string& progress, bool resurrect, long long nowMs);
+                            const std::string& progress, const std::string& bookmark, bool resurrect, long long nowMs);
 
         void insertUserBookmark(const std::string& user, const std::string& fileId, long long id,
                                 const std::string& locator, const std::string& label,
